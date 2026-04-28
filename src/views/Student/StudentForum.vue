@@ -53,10 +53,30 @@
               </button>
             </div>
 
+            <!-- 加载状态 -->
+            <div v-if="loading" class="loading-state">
+              <div class="loading-spinner"></div>
+              <p>加载中...</p>
+            </div>
+
+            <!-- 错误提示 -->
+            <div v-else-if="error" class="error-state">
+              <p class="error-message">{{ error }}</p>
+              <button class="btn-primary" @click="loadPosts">重试</button>
+            </div>
+
+            <!-- 空状态 -->
+            <div v-else-if="filteredPosts.length === 0" class="empty-state">
+              <div class="empty-icon">📝</div>
+              <h3>暂无帖子</h3>
+              <p>还没有帖子，快来发布第一个帖子吧！</p>
+              <button class="btn-primary" @click="goToCreatePost">发布新帖子</button>
+            </div>
+
             <!-- 帖子列表 -->
             <div class="post-list">
-              <div 
-                v-for="post in filteredPosts" 
+              <div
+                v-for="post in filteredPosts"
                 :key="post.id"
                 class="post-card"
                 @click="goToPostDetail(post.id)"
@@ -64,7 +84,7 @@
                 <div class="post-header">
                   <div class="post-title-area">
                     <div class="author-avatar" :style="{ backgroundColor: getAvatarColor(post.author) }">{{ getAvatarInitial(post.author) }}</div>
-                    <h3 class="post-title">{{ post.title }}</h3>
+                    <h3 class="post-title">{{ post.title || '无标题' }}</h3>
                   </div>
                   <div class="post-header-actions">
                     <span v-if="post.isTop" class="post-badge top-badge">置顶</span>
@@ -84,7 +104,7 @@
                     <span v-for="tag in post.tags" :key="tag" class="post-tag">{{ tag }}</span>
                   </span>
                 </div>
-                <p class="post-content">{{ post.content.substring(0, 150) }}...</p>
+                <p class="post-content">{{ (post.content || '').substring(0, 150) }}...</p>
               </div>
             </div>
 
@@ -104,11 +124,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import StudentSidebar from '@/components/Student/StudentSidebar.vue'
 import StudentHeader from '@/components/Student/StudentHeader.vue'
 import Breadcrumb from '@/components/Breadcrumb.vue'
+import { forumAPI } from '@/services/api.js'
 
 const router = useRouter()
 
@@ -117,6 +138,8 @@ const selectedCategory = ref('all')
 const currentPage = ref(1)
 const searchKeyword = ref('')
 const sortBy = ref('latest')
+const loading = ref(false)
+const error = ref('')
 
 // 分类数据
 const categories = ref([
@@ -128,115 +151,134 @@ const categories = ref([
   { id: 'others', name: '其他' }
 ])
 
+// 帖子数据
+const postsData = ref([])
+
 // 生成用户头像颜色
 const getAvatarColor = (author) => {
   const colors = ['#4a90e2', '#50e3c2', '#f5a623', '#d0021b', '#9013fe', '#417505'];
+  if (!author) return colors[0]; // 如果作者为空，返回默认颜色
   const hash = author.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return colors[hash % colors.length];
 };
 
 // 获取用户头像首字母
 const getAvatarInitial = (author) => {
+  if (!author) return '?'; // 如果作者为空，返回默认字符
   return author.charAt(0).toUpperCase();
 };
 
-// 帖子数据
-const postsData = ref([])
-
-
+// 加载帖子数据
+const loadPosts = async () => {
+  loading.value = true
+  error.value = ''
+  
+  try {
+    const response = await forumAPI.getPostList({
+      page: currentPage.value,
+      pageSize: 10,
+      search: searchKeyword.value,
+      categoryId: selectedCategory.value === 'all' ? '' : selectedCategory.value,
+      sort: sortBy.value
+    })
+    
+    console.log('=== loadPosts response ===', response)
+    console.log('=== response.data ===', response?.data)
+    console.log('=== Array.isArray(response?.data) ===', Array.isArray(response?.data))
+    console.log('=== Array.isArray(response?.data?.data) ===', Array.isArray(response?.data?.data))
+    
+    // 处理后端返回的数据格式
+    const data = response.data
+    if (data && Array.isArray(data)) {
+      // 直接是数组格式
+      postsData.value = data.map(post => ({
+        id: post.postId,
+        title: post.title || '无标题',
+        content: post.content || post.body || post.text || '',
+        author: post.authorName || post.author || '匿名用户',
+        date: post.createTime ? new Date(post.createTime).toLocaleString() : new Date().toLocaleString(),
+        views: post.viewCount || post.views || 0,
+        replies: post.commentCount || post.replies || 0,
+        categoryId: post.categoryId,
+        isTop: post.isTop === 1,
+        isEssence: post.isEssence === 1,
+        isFavorite: false,
+        tags: post.tags ? post.tags.split(',') : []
+      }))
+    } else if (data && data.data && Array.isArray(data.data)) {
+      // 嵌套格式 response.data.data
+      postsData.value = data.data.map(post => ({
+        id: post.postId,
+        title: post.title || '无标题',
+        content: post.content || post.body || post.text || '',
+        author: post.authorName || post.author || '匿名用户',
+        date: post.createTime ? new Date(post.createTime).toLocaleString() : new Date().toLocaleString(),
+        views: post.viewCount || post.views || 0,
+        replies: post.commentCount || post.replies || 0,
+        categoryId: post.categoryId,
+        isTop: post.isTop === 1,
+        isEssence: post.isEssence === 1,
+        isFavorite: false,
+        tags: post.tags ? post.tags.split(',') : []
+      }))
+    }
+  } catch (err) {
+    error.value = '加载帖子失败，请重试'
+    console.error('加载帖子失败:', err)
+  } finally {
+    loading.value = false
+  }
+}
 
 // 过滤后的帖子
 const filteredPosts = computed(() => {
-  let filtered = postsData.value
-  
-  // 分类过滤
-  if (selectedCategory.value !== 'all') {
-    filtered = filtered.filter(post => post.categoryId === selectedCategory.value)
-  }
-  
-  // 搜索过滤
-  if (searchKeyword.value.trim()) {
-    const keyword = searchKeyword.value.trim().toLowerCase()
-    filtered = filtered.filter(post => 
-      post.title.toLowerCase().includes(keyword) || 
-      post.content.toLowerCase().includes(keyword) ||
-      post.author.toLowerCase().includes(keyword) ||
-      (post.tags && post.tags.some(tag => tag.toLowerCase().includes(keyword)))
-    )
-  }
-  
-  // 排序
-  switch (sortBy.value) {
-    case 'latest':
-      filtered.sort((a, b) => new Date(b.date) - new Date(a.date))
-      break
-    case 'mostViews':
-      filtered.sort((a, b) => b.views - a.views)
-      break
-    case 'mostReplies':
-      filtered.sort((a, b) => b.replies - a.replies)
-      break
-  }
-  
-  // 置顶帖优先
-  filtered.sort((a, b) => {
-    if (a.isTop && !b.isTop) return -1
-    if (!a.isTop && b.isTop) return 1
-    return 0
-  })
-  
-  // 分页处理（简单模拟）
-  const pageSize = 5
-  const start = (currentPage.value - 1) * pageSize
-  const end = start + pageSize
-  return filtered.slice(start, end)
+  return postsData.value
 })
 
 // 总页数
 const totalPages = computed(() => {
-  const pageSize = 5
-  let filtered = postsData.value
-  
-  // 分类过滤
-  if (selectedCategory.value !== 'all') {
-    filtered = filtered.filter(post => post.categoryId === selectedCategory.value)
-  }
-  
-  // 搜索过滤
-  if (searchKeyword.value.trim()) {
-    const keyword = searchKeyword.value.trim().toLowerCase()
-    filtered = filtered.filter(post => 
-      post.title.toLowerCase().includes(keyword) || 
-      post.content.toLowerCase().includes(keyword) ||
-      post.author.toLowerCase().includes(keyword) ||
-      (post.tags && post.tags.some(tag => tag.toLowerCase().includes(keyword)))
-    )
-  }
-  
-  return Math.ceil(filtered.length / pageSize)
+  // 实际项目中应该从API返回的分页信息中获取
+  return Math.ceil(postsData.value.length / 10)
 })
 
 // 选择分类
 const selectCategory = (categoryId) => {
   selectedCategory.value = categoryId
   currentPage.value = 1
+  loadPosts()
 }
 
 // 处理搜索
 const handleSearch = () => {
   currentPage.value = 1
+  loadPosts()
 }
 
 // 处理排序
 const handleSort = () => {
   currentPage.value = 1
+  loadPosts()
 }
 
 // 切换收藏状态
-const toggleFavorite = (post) => {
-  const postIndex = postsData.value.findIndex(p => p.id === post.id)
-  if (postIndex !== -1) {
-    postsData.value[postIndex].isFavorite = !postsData.value[postIndex].isFavorite
+const toggleFavorite = async (post) => {
+  try {
+    if (post.isFavorite) {
+      await forumAPI.removeFavorite({
+        postId: post.id
+      })
+    } else {
+      await forumAPI.addFavorite({
+        postId: post.id
+      })
+    }
+    
+    const postIndex = postsData.value.findIndex(p => p.id === post.id)
+    if (postIndex !== -1) {
+      postsData.value[postIndex].isFavorite = !postsData.value[postIndex].isFavorite
+    }
+  } catch (err) {
+    console.error('操作收藏失败:', err)
   }
 }
 
@@ -247,11 +289,6 @@ const goToCreatePost = () => {
 
 // 跳转到帖子详情页面
 const goToPostDetail = (postId) => {
-  // 模拟增加浏览量
-  const postIndex = postsData.value.findIndex(p => p.id === postId)
-  if (postIndex !== -1) {
-    postsData.value[postIndex].views++
-  }
   router.push(`/student/forum/post/${postId}`)
 }
 
@@ -260,6 +297,11 @@ const getCategoryName = (categoryId) => {
   const category = categories.value.find(c => c.id === categoryId)
   return category ? category.name : '未知'
 }
+
+// 初始加载
+onMounted(() => {
+  loadPosts()
+})
 </script>
 
 <style scoped>
@@ -951,6 +993,87 @@ const getCategoryName = (categoryId) => {
 
 .reply-btn:hover {
   background: #357abd;
+}
+
+/* 加载状态 */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #4a90e2;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-state p {
+  color: #6c757d;
+  font-size: 14px;
+  margin: 0;
+}
+
+/* 错误状态 */
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  background: #fff5f5;
+  border-radius: 12px;
+  border: 1px solid #ffebee;
+}
+
+.error-message {
+  color: #d32f2f;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+/* 空状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  background: #f8f9fa;
+  border-radius: 12px;
+  border: 1px dashed #dee2e6;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-state h3 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a2a3a;
+  margin: 0 0 8px 0;
+}
+
+.empty-state p {
+  color: #6c757d;
+  font-size: 14px;
+  margin-bottom: 24px;
 }
 
 /* 响应式 */

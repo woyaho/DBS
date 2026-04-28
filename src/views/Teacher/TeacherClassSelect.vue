@@ -12,7 +12,22 @@
             <p class="page-description">请选择您要管理的班级</p>
           </div>
 
-          <div class="class-grid">
+          <!-- 加载状态 -->
+          <div v-if="loading" class="loading-state">
+            <div class="loading-spinner"></div>
+            <p>加载班级数据中...</p>
+          </div>
+
+          <!-- 错误提示 -->
+          <div v-else-if="error" class="error-state">
+            <div class="error-icon">⚠️</div>
+            <h3>加载失败</h3>
+            <p>{{ error }}</p>
+            <button class="btn btn-primary" @click="loadClassCounts">重试</button>
+          </div>
+
+          <!-- 班级列表 -->
+          <div v-else class="class-grid">
             <div 
               v-for="classItem in teacherClasses" 
               :key="classItem.id"
@@ -33,7 +48,8 @@
             </div>
           </div>
 
-          <div v-if="teacherClasses.length === 0" class="empty-state">
+          <!-- 空状态 -->
+          <div v-if="!loading && !error && teacherClasses.length === 0" class="empty-state">
             <div class="empty-icon">🏫</div>
             <h3>暂无班级</h3>
             <p>请联系管理员为您分配班级</p>
@@ -49,35 +65,37 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import TeacherSidebar from '@/components/Teacher/TeacherSidebar.vue'
 import TeacherHeader from '@/components/Teacher/TeacherHeader.vue'
+import { teacherAPI } from '@/services/api.js'
 
 const router = useRouter()
 const teacherClasses = ref([])
-
-const classes = [
-  { id: 1, name: '高一(1)班', teacherId: 2, studentCount: 30, createdAt: '2024-01-01 00:00:00' },
-  { id: 2, name: '高一(2)班', teacherId: 2, studentCount: 28, createdAt: '2024-01-02 00:00:00' },
-  { id: 3, name: '高二(1)班', teacherId: 5, studentCount: 32, createdAt: '2024-01-03 00:00:00' }
-]
-
-const users = [
-  { id: 1, username: 'admin', name: '系统管理员', email: 'admin@example.com', role: 'admin', status: 'active', createdAt: '2024-01-01 00:00:00' },
-  { id: 2, username: 'teacher1', name: '张老师', email: 'teacher1@example.com', role: 'teacher', status: 'active', createdAt: '2024-01-02 00:00:00' },
-  { id: 3, username: 'student1', name: '李学生', email: 'student1@example.com', role: 'student', status: 'active', createdAt: '2024-01-03 00:00:00' },
-  { id: 4, username: 'student2', name: '王学生', email: 'student2@example.com', role: 'student', status: 'inactive', createdAt: '2024-01-04 00:00:00' },
-  { id: 5, username: 'teacher2', name: '刘老师', email: 'teacher2@example.com', role: 'teacher', status: 'active', createdAt: '2024-01-05 00:00:00' }
-]
+const loading = ref(false)
+const error = ref('')
 
 const selectClass = (classItem) => {
   localStorage.setItem('selectedClass', JSON.stringify(classItem))
   router.push('/teacher/homework')
 }
 
-onMounted(() => {
-  const user = localStorage.getItem('user')
-  if (user) {
-    const userData = JSON.parse(user)
-    teacherClasses.value = classes.filter(classItem => classItem.teacherId === userData.id)
+const loadClassCounts = async () => {
+  loading.value = true
+  error.value = ''
+  
+  try {
+    const response = await teacherAPI.getClassCounts()
+    if (response.data && Array.isArray(response.data)) {
+      teacherClasses.value = response.data
+    }
+  } catch (err) {
+    error.value = '加载班级数据失败，请重试'
+    console.error('加载班级数据失败:', err)
+  } finally {
+    loading.value = false
   }
+}
+
+onMounted(() => {
+  loadClassCounts()
 })
 </script>
 
@@ -222,6 +240,70 @@ onMounted(() => {
   color: #666;
 }
 
+/* 加载状态 */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 24px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #4a90e2;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-state p {
+  color: #666;
+  font-size: 14px;
+  margin: 0;
+}
+
+/* 错误状态 */
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 24px;
+  background: #fff5f5;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  text-align: center;
+}
+
+.error-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.error-state h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #d32f2f;
+}
+
+.error-state p {
+  margin: 0 0 24px 0;
+  font-size: 14px;
+  color: #666;
+}
+
 @media (max-width: 768px) {
   .content-area {
     margin-left: 0;
@@ -238,6 +320,11 @@ onMounted(() => {
 
   .class-card {
     padding: 20px;
+  }
+
+  .loading-state,
+  .error-state {
+    padding: 48px 16px;
   }
 }
 </style>

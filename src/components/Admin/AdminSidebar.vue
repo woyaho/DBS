@@ -6,7 +6,6 @@
     <ul class="sidebar-menu">
       <li :class="{ active: currentPath === '/admin/dashboard' }" @click="navigateTo('/admin/dashboard')"> 首页</li>
       <li :class="{ active: currentPath === '/admin/users' }" @click="navigateTo('/admin/users')"> 用户管理</li>
-      <li :class="{ active: currentPath === '/admin/roles' }" @click="navigateTo('/admin/roles')"> 角色管理</li>
       <li :class="{ active: currentPath === '/admin/classes' }" @click="navigateTo('/admin/classes')"> 班级管理</li>
       <li :class="{ active: currentPath === '/admin/homework' }" @click="navigateTo('/admin/homework')"> 作业管理</li>
       <li :class="{ active: currentPath === '/admin/logs' }" @click="navigateTo('/admin/logs')"> 系统日志</li>
@@ -36,15 +35,23 @@ const logout = () => {
 /* 侧边栏 */
 .sidebar {
   width: 200px;
+  min-width: 200px;
+  max-width: 200px;
   background: #F7F7F7;
   border-right: 1px solid #e0e0e0;
+  display: -webkit-box;
+  display: -ms-flexbox;
   display: flex;
+  -webkit-box-orient: vertical;
+  -webkit-box-direction: normal;
+  -ms-flex-direction: column;
   flex-direction: column;
   position: fixed;
   top: 0;
   left: 0;
   height: 100vh;
   z-index: 200;
+  flex-shrink: 0;
 }
 
 .logo-area {

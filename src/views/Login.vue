@@ -17,13 +17,13 @@
               <span class="input-icon">👤</span>
               <input
                 type="text"
-                id="username"
-                v-model="username"
-                placeholder="请输入用户名"
+                id="account"
+                v-model="account"
+                placeholder="请输入账号"
                 class="form-input"
-                :class="{ 'input-focused': isUsernameFocused }"
-                @focus="isUsernameFocused = true"
-                @blur="isUsernameFocused = false"
+                :class="{ 'input-focused': isAccountFocused }"
+                @focus="isAccountFocused = true"
+                @blur="isAccountFocused = false"
               />
             </div>
           </div>
@@ -45,12 +45,26 @@
               </span>
             </div>
           </div>
+          <div class="form-group">
+            <div class="input-wrapper identity-wrapper">
+              <span class="input-icon">🎭</span>
+              <select
+                id="identity"
+                v-model="identity"
+                class="form-input identity-select"
+              >
+                <option value="student">学生</option>
+                <option value="teacher">教师</option>
+                <option value="admin">管理员</option>
+              </select>
+            </div>
+          </div>
           <div class="form-options">
             <label class="remember-me">
               <input type="checkbox" v-model="rememberMe" />
               <span>记住我</span>
             </label>
-            <a href="#" class="forgot-password">忘记密码？</a>
+            <a href="#" class="forgot-password" @click.prevent="goToForgetPassword">忘记密码？</a>
           </div>
           <div v-if="error" class="error-message">
             <span class="error-icon">⚠️</span>
@@ -82,21 +96,23 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { authAPI } from '@/services/api.js'
 
 const router = useRouter()
-const username = ref('')
+const account = ref('')
 const password = ref('')
+const identity = ref('student')
 const loading = ref(false)
 const error = ref('')
-const isUsernameFocused = ref(false)
+const isAccountFocused = ref(false)
 const isPasswordFocused = ref(false)
 const showPassword = ref(false)
 const rememberMe = ref(false)
 
 const login = async () => {
   // 简单验证
-  if (!username.value || !password.value) {
-    error.value = '请输入用户名和密码'
+  if (!account.value || !password.value) {
+    error.value = '请输入账号和密码'
     return
   }
 
@@ -104,23 +120,38 @@ const login = async () => {
   error.value = ''
 
   try {
-    // 模拟登录请求
-    await new Promise(resolve => setTimeout(resolve, 1000))
-
-    // 模拟登录验证
-    const validAccounts = {
-      'student': { role: 'student', name: '学生用户' },
-      'teacher': { role: 'teacher', name: '教师用户' },
-      'admin': { role: 'admin', name: '管理员用户' }
+    // 清除之前可能存在的无效缓存
+    localStorage.removeItem('user')
+    localStorage.removeItem('token')
+    sessionStorage.clear()
+    
+    // 先调用登出接口清除服务器端session
+    try {
+      await authAPI.logout()
+    } catch (e) {
+      // 忽略登出失败，可能本来就没有登录状态
     }
+    
+    // 调用真实的后端登录API
+    const response = await authAPI.login({
+      account: account.value,
+      password: password.value,
+      identity: identity.value
+    })
 
-    if (validAccounts[username.value] && password.value === '123456') {
-      // 登录成功，存储用户信息
+    if (response.code === 200) {
+      // 登录成功，存储用户信息和Token
       const userInfo = {
-        ...validAccounts[username.value],
-        username: username.value
+        username: response.data?.username || account.value,
+        role: response.data?.identity || identity.value,
+        name: response.data?.name || account.value
       }
       localStorage.setItem('user', JSON.stringify(userInfo))
+      
+      // 存储认证Token（如果后端返回）
+      if (response.data?.token) {
+        localStorage.setItem('token', response.data.token)
+      }
 
       // 根据用户角色跳转到对应页面
       if (userInfo.role === 'student') {
@@ -131,7 +162,7 @@ const login = async () => {
         router.push('/admin/dashboard')
       }
     } else {
-      error.value = '用户名或密码错误'
+      error.value = response.message || '登录失败'
     }
   } catch (err) {
     error.value = '登录失败，请稍后重试'
@@ -139,6 +170,10 @@ const login = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const goToForgetPassword = () => {
+  router.push('/forget-password')
 }
 </script>
 
@@ -282,6 +317,21 @@ const login = async () => {
 
 .form-input.input-focused + .input-icon {
   transform: translateY(-50%) scale(1.15);
+}
+
+.identity-wrapper .input-icon {
+  z-index: 1;
+}
+
+.identity-select {
+  appearance: none;
+  cursor: pointer;
+  padding-right: 40px;
+}
+
+.identity-select option {
+  background: #fff;
+  color: #333;
 }
 
 .error-message {

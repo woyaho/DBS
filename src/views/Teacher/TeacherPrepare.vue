@@ -19,10 +19,17 @@
           <div class="resource-section">
             <div class="section-header">
               <h2 class="section-title">资料分享库</h2>
-              <button class="upload-btn">
+              <button class="upload-btn" @click="triggerFileUpload">
                 <span class="upload-icon">📤</span>
-                上传文件
+                {{ uploading ? '上传中...' : '上传文件' }}
               </button>
+              <input
+                type="file"
+                ref="fileInput"
+                class="file-input"
+                accept=".pdf"
+                @change="handleFileUpload"
+              />
             </div>
 
             <!-- 课件列表 -->
@@ -67,11 +74,11 @@
                   <h3 class="config-title">难度选择</h3>
                   <div class="slider-wrapper">
                     <div class="slider-track">
-                      <input 
-                        type="range" 
-                        min="1" 
-                        max="5" 
-                        v-model="difficulty" 
+                      <input
+                        type="range"
+                        min="1"
+                        max="5"
+                        v-model="difficulty"
                         class="difficulty-slider"
                       />
                       <div class="slider-markers">
@@ -91,12 +98,12 @@
                   <h3 class="config-title">题量选择</h3>
                   <div class="slider-wrapper">
                     <div class="slider-track">
-                      <input 
-                        type="range" 
-                        min="10" 
-                        max="50" 
-                        step="10" 
-                        v-model="questionCount" 
+                      <input
+                        type="range"
+                        min="10"
+                        max="50"
+                        step="10"
+                        v-model="questionCount"
                         class="question-slider"
                       />
                       <div class="slider-markers">
@@ -151,6 +158,13 @@
 import { ref } from 'vue'
 import TeacherSidebar from '@/components/Teacher/TeacherSidebar.vue'
 import TeacherHeader from '@/components/Teacher/TeacherHeader.vue'
+import { teacherAPI } from '@/services/api.js'
+
+// 文件输入引用
+const fileInput = ref(null)
+
+// 上传状态
+const uploading = ref(false)
 
 // 课件列表
 const coursewareList = ref([
@@ -187,6 +201,94 @@ const generatingAIExam = ref(false)
 const analyzingRequirements = ref(false)
 const aiAnalysisResult = ref('')
 
+// 触发文件上传
+const triggerFileUpload = () => {
+  if (fileInput.value) {
+    fileInput.value.click()
+  }
+}
+
+// 加载课件列表
+const loadCoursewareList = async () => {
+  try {
+    const response = await teacherAPI.getCoursewareList()
+    if (response.code === 200) {
+      coursewareList.value = response.data.map(item => ({
+        title: item.title,
+        type: 'PDF',
+        size: formatFileSize(item.size || 0),
+        words: '约0.2万字',
+        id: item.id
+      }))
+    }
+  } catch (error) {
+    console.error('加载课件列表失败:', error)
+  }
+}
+
+// 处理文件上传
+const handleFileUpload = async (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+
+  // 验证文件类型（后端仅支持PDF）
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    alert('课件仅支持PDF格式')
+    return
+  }
+
+  // 验证文件大小（最大10MB）
+  if (file.size > 10 * 1024 * 1024) {
+    alert('文件大小不能超过10MB')
+    return
+  }
+
+  uploading.value = true
+
+  try {
+    const fileName = file.name.replace(/\.[^/.]+$/, '') // 去掉扩展名作为标题
+
+    console.log('准备上传文件:', fileName, '大小:', file.size)
+
+    const response = await teacherAPI.uploadCourseware(file, fileName)
+
+    console.log('上传响应:', response)
+
+    if (response.code === 200 || response.success) {
+      alert('文件上传成功！')
+      loadCoursewareList() // 刷新课件列表
+    } else {
+      alert('文件上传失败: ' + (response.message || response.msg || '未知错误'))
+    }
+  } catch (error) {
+    console.error('文件上传失败:', error)
+    const errorMessage = error.message || '网络请求失败'
+    // 根据错误类型给出更具体的提示
+    if (errorMessage.includes('401')) {
+      alert('文件上传失败：请重新登录后重试')
+    } else if (errorMessage.includes('403')) {
+      alert('文件上传失败：您没有权限进行此操作')
+    } else if (errorMessage.includes('500')) {
+      alert('文件上传失败：服务器内部错误，请稍后重试')
+    } else {
+      alert('文件上传失败：' + errorMessage)
+    }
+  } finally {
+    uploading.value = false
+    // 重置文件输入
+    if (fileInput.value) {
+      fileInput.value.value = ''
+    }
+  }
+}
+
+// 格式化文件大小
+const formatFileSize = (bytes) => {
+  if (bytes < 1024) return bytes + 'B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB'
+  return (bytes / (1024 * 1024)).toFixed(1) + 'MB'
+}
+
 // 切换章节选择
 const toggleChapter = (chapterId) => {
   const chapter = chapters.value.find(ch => ch.id === chapterId)
@@ -211,12 +313,12 @@ const getDifficultyText = (value) => {
 const generateAIExam = async () => {
   // 收集选择的章节
   const selectedChapters = chapters.value.filter(ch => ch.checked).map(ch => ch.name)
-  
+
   if (selectedChapters.length === 0) {
     alert('请至少选择一个章节')
     return
   }
-  
+
   generatingAIExam.value = true
   try {
     // 构建组卷参数
@@ -226,7 +328,7 @@ const generateAIExam = async () => {
       questionCount: questionCount.value,
       customRequirements: customRequirements.value
     }
-    
+
     // 模拟AI生成组卷
     await new Promise(resolve => setTimeout(resolve, 2000))
     console.log('AI生成组卷参数:', examParams)
@@ -239,12 +341,12 @@ const generateAIExam = async () => {
 // 分析需求
 const analyzeRequirements = async () => {
   const selectedChapters = chapters.value.filter(ch => ch.checked).map(ch => ch.name)
-  
+
   if (selectedChapters.length === 0) {
     alert('请至少选择一个章节')
     return
   }
-  
+
   analyzingRequirements.value = true
   try {
     // 模拟需求分析
@@ -259,7 +361,7 @@ const analyzeRequirements = async () => {
 const generateExam = () => {
   // 收集选择的章节
   const selectedChapters = chapters.value.filter(ch => ch.checked).map(ch => ch.name)
-  
+
   // 构建组卷参数
   const examParams = {
     chapters: selectedChapters,
@@ -267,7 +369,7 @@ const generateExam = () => {
     questionCount: questionCount.value,
     customRequirements: customRequirements.value
   }
-  
+
   // 模拟生成组卷
   console.log('生成组卷参数:', examParams)
   alert('组卷生成成功！')
@@ -356,8 +458,18 @@ const generateExam = () => {
   background: #357abd;
 }
 
+.upload-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 .upload-icon {
   font-size: 16px;
+}
+
+/* 隐藏的文件输入框 */
+.file-input {
+  display: none;
 }
 
 /* 课件网格 */
@@ -650,35 +762,35 @@ const generateExam = () => {
     margin-left: 0;
     width: 100%;
   }
-  
+
   .main-content {
     padding: 16px;
   }
-  
+
   .section-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
-  
+
   .courseware-grid {
     grid-template-columns: 1fr;
   }
-  
+
   .exam-config {
     grid-template-columns: 1fr;
   }
-  
+
   .slider-wrapper {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
-  
+
   .slider-value {
     align-self: flex-end;
   }
-  
+
   .generate-section {
     justify-content: center;
   }

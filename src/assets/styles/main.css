@@ -533,23 +533,35 @@
   padding: var(--spacing-lg);
   overflow-y: auto;
   background: var(--bg-page);
+  min-width: 0;
+  width: 100%;
 }
 
 /* 页面布局 */
 .page-layout {
+  display: -webkit-box;
+  display: -ms-flexbox;
   display: flex;
   min-height: 100vh;
   background: #F0F2F5;
   border: none;
   border-radius: 0;
+  position: relative;
 }
 
 .content-area {
+  -webkit-box-flex: 1;
+  -ms-flex: 1;
   flex: 1;
+  display: -webkit-box;
+  display: -ms-flexbox;
   display: flex;
+  -webkit-box-orient: vertical;
+  -webkit-box-direction: normal;
+  -ms-flex-direction: column;
   flex-direction: column;
   margin-left: 200px;
-  width: calc(100% - 200px);
+  min-width: 0;
 }
 
 /* 欢迎卡片 */

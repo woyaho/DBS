@@ -2,7 +2,7 @@
   <div class="page-layout">
     <!-- 栏头 -->
     <TeacherHeader />
-    
+
     <div class="content-container">
       <!-- 侧边栏 -->
       <TeacherSidebar />
@@ -58,6 +58,13 @@
                   :disabled="isAutoReviewing || notReviewedCount === 0"
                 >
                   {{ isAutoReviewing ? 'AI批改中...' : '一键AI批改' }}
+                </button>
+                <button
+                  class="publish-results-btn"
+                  @click="publishResults"
+                  :disabled="publishingResults || completedCount === 0"
+                >
+                  {{ publishingResults ? '公布中...' : '公布批改结果' }}
                 </button>
 
                 <!-- AI批改进度 -->
@@ -340,6 +347,7 @@ const isAutoReviewing = ref(false)
 const autoReviewProgress = ref(0)
 const loading = ref(false)
 const loadingSubmissions = ref(false)
+const publishingResults = ref(false)
 
 // 班级数据
 const teacherClasses = ref([])
@@ -413,9 +421,44 @@ const loadHomeworkInfo = async () => {
   loading.value = true
   try {
     const homeworkId = parseInt(route.params.id) || 1
+    selectedHomework.value = homeworkId.toString()
+
+    // 调用API获取作业详情
+    const response = await teacherAPI.getAssignmentDetail(homeworkId)
+    if (response.code === 200 && response.data) {
+      homeworkInfo.value = {
+        id: response.data.id || homeworkId,
+        title: response.data.title || '未命名作业',
+        description: response.data.description || response.data.content || '',
+        publishTime: response.data.publishTime || response.data.startTime || '',
+        deadline: response.data.deadline || response.data.endTime || '',
+        totalCount: response.data.totalCount || response.data.totalStudents || 0,
+        submittedCount: response.data.submittedCount || 0,
+        reviewedCount: response.data.reviewedCount || 0
+      }
+    } else {
+      // 使用默认值
+      homeworkInfo.value = {
+        id: homeworkId,
+        title: `作业${homeworkId}`,
+        description: '',
+        publishTime: '',
+        deadline: '',
+        totalCount: 0,
+        submittedCount: 0,
+        reviewedCount: 0
+      }
+    }
+
+    // 加载作业提交列表
+    await loadSubmissions(homeworkId)
+  } catch (error) {
+    console.error('加载作业信息失败:', error)
+    // 使用默认值继续
+    const homeworkId = parseInt(route.params.id) || 1
     homeworkInfo.value = {
       id: homeworkId,
-      title: '',
+      title: `作业${homeworkId}`,
       description: '',
       publishTime: '',
       deadline: '',
@@ -423,13 +466,7 @@ const loadHomeworkInfo = async () => {
       submittedCount: 0,
       reviewedCount: 0
     }
-    selectedHomework.value = homeworkId.toString()
-    
-    // 加载作业提交列表
     await loadSubmissions(homeworkId)
-  } catch (error) {
-    console.error('加载作业信息失败:', error)
-    alert('加载作业信息失败，请稍后重试')
   } finally {
     loading.value = false
   }
@@ -439,25 +476,41 @@ const loadHomeworkInfo = async () => {
 const loadSubmissions = async (assignmentId) => {
   loadingSubmissions.value = true
   try {
+    console.log('开始加载作业提交列表, assignmentId:', assignmentId)
     const response = await teacherAPI.getAssignmentSubmissions(assignmentId)
-    if (response.code === 200) {
+    console.log('作业提交列表API响应:', response)
+
+    if (response.code === 200 && response.data) {
       homeworkData.value = response.data.map(item => ({
-        id: item.submissionId,
-        studentId: item.studentUsername,
-        studentName: item.studentName,
-        homeworkName: homeworkInfo.value.title,
-        submitTime: new Date(item.submittedAt).toLocaleString('zh-CN'),
-        status: item.grade === null ? 'pending' : 'completed',
-        score: item.grade,
-        files: [
-          { name: item.mergedPdfName, url: item.viewPdfUrl }
-        ],
-        content: '作业内容...'
+        id: item.submissionId || item.id || item.submission_id,
+        studentId: item.studentUsername || item.studentId || item.student_id || '',
+        studentName: item.studentName || item.student_name || '未知学生',
+        homeworkName: homeworkInfo.value.title || '未命名作业',
+        submitTime: item.submittedAt ? new Date(item.submittedAt).toLocaleString('zh-CN') :
+                   item.submitTime || item.submitted_time || '未知时间',
+        status: (item.grade === null || item.grade === undefined) ? 'pending' : 'completed',
+        score: item.grade !== null && item.grade !== undefined ? item.grade : null,
+        files: item.mergedPdfName || item.viewPdfUrl ? [
+          { name: item.mergedPdfName || item.fileName || '作业文件', url: item.viewPdfUrl }
+        ] : [],
+        content: item.textContent || item.content || '无内容'
       }))
+
+      // 更新作业信息中的提交数量
+      if (homeworkData.value.length > 0) {
+        homeworkInfo.value.submittedCount = homeworkData.value.length
+        homeworkInfo.value.reviewedCount = homeworkData.value.filter(item => item.status === 'completed').length
+      }
+
+      console.log('作业数据加载成功, 共', homeworkData.value.length, '条记录')
+    } else {
+      homeworkData.value = []
+      console.log('未获取到作业提交数据')
     }
   } catch (error) {
     console.error('加载作业提交列表失败:', error)
-    alert('加载作业提交列表失败，请稍后重试')
+    homeworkData.value = []
+    // 不弹出alert，避免影响用户体验
   } finally {
     loadingSubmissions.value = false
   }
@@ -467,10 +520,19 @@ const loadSubmissions = async (assignmentId) => {
 const loadAssignmentStatus = async (assignmentId) => {
   try {
     const response = await teacherAPI.getAssignmentStatus(assignmentId)
-    if (response.code === 200) {
-      homeworkInfo.value.totalCount = response.data.totalStudents
-      homeworkInfo.value.submittedCount = response.data.submittedCount
-      homeworkInfo.value.reviewedCount = response.data.submittedCount - notReviewedCount.value
+    console.log('作业状态统计响应:', response)
+
+    if (response.code === 200 && response.data) {
+      // 更新总学生数（优先使用API数据）
+      if (response.data.totalStudents !== undefined) {
+        homeworkInfo.value.totalCount = response.data.totalStudents
+      }
+      if (response.data.submittedCount !== undefined) {
+        homeworkInfo.value.submittedCount = response.data.submittedCount
+      }
+      if (response.data.reviewedCount !== undefined) {
+        homeworkInfo.value.reviewedCount = response.data.reviewedCount
+      }
     }
   } catch (error) {
     console.error('加载作业状态统计失败:', error)
@@ -688,7 +750,7 @@ const submitReview = async () => {
   try {
     // 调用批改作业的API
     await teacherAPI.gradeAssignment(selectedSubmission.value.id, score, reviewComment.value)
-    
+
     // 更新本地数据
     const index = homeworkData.value.findIndex(item => item.id === selectedSubmission.value.id)
     if (index !== -1) {
@@ -721,7 +783,7 @@ const startAIAutoReview = async () => {
   try {
     const homeworkId = parseInt(route.params.id) || 1
     const response = await teacherAPI.aiGradeAssignment(homeworkId, false)
-    
+
     if (response.code === 200) {
       // 轮询批改进度
       const checkProgress = async () => {
@@ -729,7 +791,7 @@ const startAIAutoReview = async () => {
         if (progressResponse.code === 200) {
           const progressData = progressResponse.data
           autoReviewProgress.value = Math.round((progressData.completedCount / progressData.totalCount) * 100)
-          
+
           if (progressData.status === 'completed' || progressData.status === 'partial_success') {
             // 加载最新的批改结果
             await loadSubmissions(homeworkId)
@@ -742,7 +804,7 @@ const startAIAutoReview = async () => {
           }
         }
       }
-      
+
       // 开始轮询
       setTimeout(checkProgress, 2000)
     }
@@ -751,6 +813,32 @@ const startAIAutoReview = async () => {
     alert('AI批改失败，请稍后重试')
     isAutoReviewing.value = false
     autoReviewProgress.value = 0
+  }
+}
+
+// 公布批改结果
+const publishResults = async () => {
+  if (completedCount.value === 0) {
+    alert('没有已批改的作业')
+    return
+  }
+
+  publishingResults.value = true
+
+  try {
+    const homeworkId = parseInt(route.params.id) || 1
+    const response = await teacherAPI.publishAiResults(homeworkId)
+
+    if (response.code === 200) {
+      alert('批改结果公布成功！')
+    } else {
+      alert('批改结果公布失败：' + (response.message || '未知错误'))
+    }
+  } catch (error) {
+    console.error('公布批改结果失败:', error)
+    alert('公布批改结果失败，请稍后重试')
+  } finally {
+    publishingResults.value = false
   }
 }
 </script>
@@ -913,6 +1001,35 @@ const startAIAutoReview = async () => {
 }
 
 .ai-auto-review-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* 公布批改结果按钮 */
+.publish-results-btn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.publish-results-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+}
+
+.publish-results-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
   transform: none;

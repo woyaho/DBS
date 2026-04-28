@@ -19,8 +19,20 @@
             <button class="btn-secondary back-btn" @click="goBack">返回论坛</button>
           </div>
 
+          <!-- 加载状态 -->
+          <div v-if="loading" class="loading-state">
+            <div class="loading-spinner"></div>
+            <p>加载中...</p>
+          </div>
+
+          <!-- 错误提示 -->
+          <div v-else-if="error" class="error-state">
+            <p class="error-message">{{ error }}</p>
+            <button class="btn-primary" @click="loadPostDetail">重试</button>
+          </div>
+
           <!-- 帖子内容 -->
-          <div v-if="post" class="post-detail-card">
+          <div v-else-if="post" class="post-detail-card">
             <div class="post-header">
               <div class="post-title-area">
                 <div class="author-avatar" :style="{ backgroundColor: getAvatarColor(post.author) }">{{ getAvatarInitial(post.author) }}</div>
@@ -163,14 +175,21 @@
                 <!-- 编辑区域 -->
                 <div ref="replyEditor" class="editor-content" contenteditable="true" @input="updateReplyContent" placeholder="写下你的回复..."></div>
               </div>
+              <!-- 回复错误提示 -->
+              <div v-if="replyError" class="error-message">
+                {{ replyError }}
+              </div>
               <div class="form-actions">
                 <div class="anonymous-option">
                   <label class="checkbox-label">
-                    <input type="checkbox" v-model="isAnonymous" class="checkbox-input">
+                    <input type="checkbox" v-model="isAnonymous" class="checkbox-input" :disabled="replyLoading">
                     <span class="checkbox-text">匿名回复</span>
                   </label>
                 </div>
-                <button class="btn-primary reply-btn" @click="submitReply">发表回复</button>
+                <button class="btn-primary reply-btn" @click="submitReply" :disabled="replyLoading">
+                  <span v-if="replyLoading">发布中...</span>
+                  <span v-else>发表回复</span>
+                </button>
               </div>
             </div>
           </div>
@@ -186,6 +205,7 @@ import { useRouter, useRoute } from 'vue-router'
 import StudentSidebar from '@/components/Student/StudentSidebar.vue'
 import StudentHeader from '@/components/Student/StudentHeader.vue'
 import Breadcrumb from '@/components/Breadcrumb.vue'
+import { forumAPI } from '@/services/api.js'
 
 const router = useRouter()
 const route = useRoute()
@@ -195,6 +215,10 @@ const postId = computed(() => parseInt(route.params.id))
 const post = ref(null)
 const newReply = ref('')
 const isAnonymous = ref(false)
+const loading = ref(false)
+const error = ref('')
+const replyLoading = ref(false)
+const replyError = ref('')
 
 // 图片输入引用
 const imageInput = ref(null)
@@ -211,111 +235,17 @@ const categories = ref([
   { id: 'others', name: '其他' }
 ])
 
-// 帖子数据（模拟）
-const postsData = ref([
-  {
-    id: 1,
-    title: 'PostgreSQL 与 MySQL 的性能对比分析',
-    content: '最近在项目中需要选择数据库，对 PostgreSQL 和 MySQL 进行了一些性能测试。测试场景包括：1. 大量数据的插入性能 2. 复杂查询的执行速度 3. 并发处理能力 4. 索引优化效果...',
-    author: '数据库爱好者',
-    date: '2025-03-20',
-    views: 328,
-    replies: 15,
-    categoryId: 'performance',
-    tags: ['性能测试', '数据库对比'],
-    isTop: true,
-    isEssence: true,
-    isFavorite: false,
-    replyList: [
-      {
-        author: 'SQL达人',
-        date: '2025-03-21',
-        content: '感谢分享！我也做过类似的测试，PostgreSQL 在复杂查询和事务处理方面确实表现更好。'
-      },
-      {
-        author: '数据库新手',
-        date: '2025-03-22',
-        content: '请问测试环境是怎样的？硬件配置如何？'
-      }
-    ]
-  },
-  {
-    id: 2,
-    title: 'SQL 优化技巧分享',
-    content: '在编写 SQL 查询时，有一些常见的优化技巧可以显著提高查询性能：1. 合理使用索引 2. 避免 SELECT * 3. 使用 JOIN 替代子查询 4. 适当使用视图和存储过程...',
-    author: 'SQL专家',
-    date: '2025-03-18',
-    views: 512,
-    replies: 23,
-    categoryId: 'sql',
-    tags: ['SQL优化', '性能调优'],
-    isTop: false,
-    isEssence: true,
-    isFavorite: false,
-    replyList: [
-      {
-        author: '数据库学习者',
-        date: '2025-03-19',
-        content: '非常实用的技巧，特别是关于索引的使用部分，收获很大！'
-      }
-    ]
-  },
-  {
-    id: 3,
-    title: '数据库事务隔离级别详解',
-    content: '事务隔离级别是数据库并发控制的重要概念，不同的隔离级别会影响数据一致性和并发性能。本文详细介绍了 SQL 标准中的四种隔离级别：读未提交、读已提交、可重复读和串行化...',
-    author: '数据库研究员',
-    date: '2025-03-15',
-    views: 456,
-    replies: 18,
-    categoryId: 'db-basic',
-    tags: ['事务', '隔离级别'],
-    isTop: true,
-    isEssence: false,
-    isFavorite: false,
-    replyList: []
-  },
-  {
-    id: 4,
-    title: '数据库连接池配置最佳实践',
-    content: '连接池是提高数据库性能的重要手段，但配置不当会导致性能问题。本文分享连接池配置的最佳实践，包括：1. 连接池大小的设置 2. 连接超时时间的配置 3. 连接验证机制...',
-    author: '系统架构师',
-    date: '2025-03-10',
-    views: 289,
-    replies: 12,
-    categoryId: 'performance',
-    tags: ['连接池', '性能优化'],
-    isTop: false,
-    isEssence: false,
-    isFavorite: false,
-    replyList: []
-  },
-  {
-    id: 5,
-    title: '如何处理数据库死锁问题',
-    content: '死锁是数据库并发操作中常见的问题，本文介绍死锁的产生原因和解决方法：1. 死锁的定义和产生条件 2. 死锁的检测方法 3. 死锁的预防和避免策略...',
-    author: '数据库管理员',
-    date: '2025-03-05',
-    views: 312,
-    replies: 16,
-    categoryId: 'troubleshooting',
-    tags: ['死锁', '并发'],
-    isTop: false,
-    isEssence: false,
-    isFavorite: false,
-    replyList: []
-  }
-])
-
 // 生成用户头像颜色
 const getAvatarColor = (author) => {
   const colors = ['#4a90e2', '#50e3c2', '#f5a623', '#d0021b', '#9013fe', '#417505'];
+  if (!author) return colors[0];
   const hash = author.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return colors[hash % colors.length];
 };
 
 // 获取用户头像首字母
 const getAvatarInitial = (author) => {
+  if (!author) return '?';
   return author.charAt(0).toUpperCase();
 };
 
@@ -325,17 +255,76 @@ const getCategoryName = (categoryId) => {
   return category ? category.name : '未知'
 }
 
+// 加载帖子详情
+const loadPostDetail = async () => {
+  loading.value = true
+  error.value = ''
+  
+  try {
+    const response = await forumAPI.getPostDetail({
+      postId: postId.value
+    })
+    
+    console.log('=== post detail response ===', response)
+    console.log('=== response.data ===', response?.data)
+    console.log('=== response.data.data ===', response?.data?.data)
+    
+    if (response.data && response.data.data) {
+      const postData = response.data.data
+      post.value = {
+        id: postData.postId,
+        title: postData.title || '无标题',
+        content: postData.content || postData.body || postData.text || '',
+        author: postData.authorName || postData.author || '匿名用户',
+        date: postData.createTime ? new Date(postData.createTime).toLocaleString() : new Date().toLocaleString(),
+        views: postData.viewCount || postData.views || 0,
+        replies: postData.commentCount || postData.replies || 0,
+        categoryId: postData.categoryId,
+        tags: postData.tags ? postData.tags.split(',') : [],
+        isTop: postData.isTop === 1,
+        isEssence: postData.isEssence === 1,
+        isFavorite: false,
+        replyList: []
+      }
+      
+      // 加载评论
+      await loadComments()
+    }
+  } catch (err) {
+    error.value = '加载帖子失败，请重试'
+    console.error('加载帖子失败:', err)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 加载评论
+const loadComments = async () => {
+  if (!post.value) return
+  
+  try {
+    const response = await forumAPI.getComments({
+      postId: post.value.id,
+      page: 1,
+      pageSize: 50
+    })
+    
+    if (response.data && response.data.data) {
+      post.value.replyList = response.data.data.map(comment => ({
+        id: comment.commentId,
+        author: comment.authorName,
+        date: new Date(comment.createTime).toLocaleString(),
+        content: comment.content
+      }))
+    }
+  } catch (err) {
+    console.error('加载评论失败:', err)
+  }
+}
+
 // 初始化数据
 onMounted(() => {
-  const foundPost = postsData.value.find(p => p.id === postId.value)
-  if (foundPost) {
-    post.value = { ...foundPost }
-    // 增加浏览量
-    const postIndex = postsData.value.findIndex(p => p.id === postId.value)
-    if (postIndex !== -1) {
-      postsData.value[postIndex].views++
-    }
-  }
+  loadPostDetail()
 })
 
 // 返回论坛
@@ -344,11 +333,21 @@ const goBack = () => {
 }
 
 // 切换收藏状态
-const toggleFavorite = (post) => {
-  const postIndex = postsData.value.findIndex(p => p.id === post.id)
-  if (postIndex !== -1) {
-    postsData.value[postIndex].isFavorite = !postsData.value[postIndex].isFavorite
+const toggleFavorite = async (post) => {
+  try {
+    if (post.isFavorite) {
+      await forumAPI.removeFavorite({
+        postId: post.id
+      })
+    } else {
+      await forumAPI.addFavorite({
+        postId: post.id
+      })
+    }
+    
     post.isFavorite = !post.isFavorite
+  } catch (err) {
+    console.error('操作收藏失败:', err)
   }
 }
 
@@ -440,46 +439,36 @@ const handleOCR = (event) => {
   }
 }
 
-// 获取学生姓名（模拟）
-const getStudentName = () => {
-  // 从localStorage获取用户信息
-  const user = localStorage.getItem('user')
-  if (user) {
-    const userData = JSON.parse(user)
-    return userData.name || '学生'
-  }
-  return '学生'
-}
-
 // 提交回复
-const submitReply = () => {
+const submitReply = async () => {
   if (!newReply.value) {
     alert('请输入回复内容')
     return
   }
   
-  if (post.value) {
-    const reply = {
-      author: isAnonymous.value ? '匿名用户' : getStudentName(),
-      date: new Date().toISOString().split('T')[0],
-      content: newReply.value
-    }
+  replyLoading.value = true
+  replyError.value = ''
+  
+  try {
+    await forumAPI.addComment({
+      postId: post.value.id,
+      content: newReply.value,
+      isAnonymous: isAnonymous.value ? 1 : 0
+    })
     
-    post.value.replyList.push(reply)
-    post.value.replies++
-    
-    // 更新原始数据
-    const postIndex = postsData.value.findIndex(p => p.id === post.value.id)
-    if (postIndex !== -1) {
-      postsData.value[postIndex].replyList.push(reply)
-      postsData.value[postIndex].replies++
-    }
+    // 重新加载评论
+    await loadComments()
     
     // 清空编辑器
     newReply.value = ''
     if (replyEditor.value) {
       replyEditor.value.innerHTML = ''
     }
+  } catch (err) {
+    replyError.value = '发布回复失败，请重试'
+    console.error('发布回复失败:', err)
+  } finally {
+    replyLoading.value = false
   }
 }
 </script>
@@ -983,6 +972,64 @@ const submitReply = () => {
 
 .reply-btn:hover {
   background: #357abd;
+}
+
+/* 加载状态 */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #4a90e2;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-state p {
+  color: #6c757d;
+  font-size: 14px;
+  margin: 0;
+}
+
+/* 错误状态 */
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  background: #fff5f5;
+  border-radius: 12px;
+  border: 1px solid #ffebee;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.error-message {
+  background: #fff5f5;
+  color: #d32f2f;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  border-left: 4px solid #d32f2f;
 }
 
 /* 响应式 */

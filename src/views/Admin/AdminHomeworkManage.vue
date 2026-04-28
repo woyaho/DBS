@@ -103,49 +103,42 @@
             </div>
           </div>
 
-          <!-- 添加/编辑作业弹窗 -->
+          <!-- 添加作业弹窗 -->
           <div v-if="showHomeworkModal" class="modal-overlay" @click.self="closeHomeworkModal">
             <div class="modal-content homework-modal">
               <div class="modal-header">
-                <h3>{{ isEditing ? '编辑作业' : '发布作业' }}</h3>
+                <h3>发布作业</h3>
                 <button class="close-btn" @click="closeHomeworkModal">×</button>
               </div>
               <div class="modal-body">
                 <form class="homework-form">
                   <div class="form-group">
-                    <label class="form-label">作业名称</label>
+                    <label class="form-label">作业名称 <span class="required">*</span></label>
                     <input type="text" v-model="formData.title" class="form-input" placeholder="请输入作业名称" />
                   </div>
                   <div class="form-group">
-                    <label class="form-label">所属班级</label>
-                    <select v-model="formData.classId" class="form-select">
-                      <option value="">请选择班级</option>
-                      <option v-for="cls in classes" :key="cls.id" :value="cls.id">{{ cls.name }}</option>
-                    </select>
+                    <label class="form-label">发布时间 <span class="required">*</span></label>
+                    <input type="datetime-local" v-model="formData.startTime" class="form-input" />
                   </div>
                   <div class="form-group">
-                    <label class="form-label">发布时间</label>
-                    <input type="datetime-local" v-model="formData.publishTime" class="form-input" />
+                    <label class="form-label">截止时间 <span class="required">*</span></label>
+                    <input type="datetime-local" v-model="formData.endTime" class="form-input" />
                   </div>
                   <div class="form-group">
-                    <label class="form-label">截止时间</label>
-                    <input type="datetime-local" v-model="formData.deadline" class="form-input" />
+                    <label class="form-label">作业内容 <span class="required">*</span></label>
+                    <textarea v-model="formData.content" class="form-textarea" rows="4" placeholder="请输入作业内容"></textarea>
                   </div>
                   <div class="form-group">
-                    <label class="form-label">作业描述</label>
-                    <textarea v-model="formData.description" class="form-textarea" rows="4" placeholder="请输入作业描述"></textarea>
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">作业文件</label>
+                    <label class="form-label">作业附件</label>
                     <div class="file-upload">
-                      <input type="file" @change="handleFileUpload" class="file-input" />
-                      <span class="file-text">{{ formData.fileName || '请选择文件' }}</span>
+                      <input type="file" ref="fileInput" accept=".pdf" class="file-input" />
+                      <span class="file-text">{{ (fileInput?.value?.files?.[0]?.name) || '请选择PDF文件' }}</span>
                     </div>
                   </div>
                 </form>
                 <div class="modal-actions">
                   <button class="btn-secondary" @click="closeHomeworkModal">取消</button>
-                  <button class="btn-primary" @click="submitHomework">{{ isEditing ? '更新作业' : '发布作业' }}</button>
+                  <button class="btn-primary" @click="submitHomework">发布作业</button>
                 </div>
               </div>
             </div>
@@ -161,23 +154,25 @@ import { ref, computed, onMounted } from 'vue'
 import AdminSidebar from '@/components/Admin/AdminSidebar.vue'
 import AdminHeader from '@/components/Admin/AdminHeader.vue'
 import Breadcrumb from '@/components/Breadcrumb.vue'
+import { adminAPI } from '@/services/api.js'
 
 // 状态管理
 const searchKeyword = ref('')
 const selectedStatus = ref('all')
 const selectedClass = ref('all')
 const showHomeworkModal = ref(false)
-const isEditing = ref(false)
+
+// 文件输入引用
+const fileInput = ref(null)
 
 // 表单数据
 const formData = ref({
   id: null,
   title: '',
-  classId: '',
-  publishTime: '',
-  deadline: '',
-  description: '',
-  fileName: ''
+  startTime: '',
+  endTime: '',
+  content: '',
+  attachments: []
 })
 
 // 班级数据
@@ -227,30 +222,17 @@ const getStatusText = (status) => {
 
 // 打开添加作业弹窗
 const openAddHomeworkModal = () => {
-  isEditing.value = false
   formData.value = {
     id: null,
     title: '',
-    classId: '',
-    publishTime: new Date().toISOString().slice(0, 16),
-    deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
-    description: '',
-    fileName: ''
+    startTime: new Date().toISOString().slice(0, 16),
+    endTime: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 16),
+    content: '',
+    attachments: []
   }
-  showHomeworkModal.value = true
-}
-
-// 编辑作业
-const editHomework = (homework) => {
-  isEditing.value = true
-  formData.value = {
-    id: homework.id,
-    title: homework.title,
-    classId: homework.classId,
-    publishTime: homework.publishTime,
-    deadline: homework.deadline,
-    description: homework.description,
-    fileName: homework.fileName
+  // 重置文件输入
+  if (fileInput.value) {
+    fileInput.value.value = ''
   }
   showHomeworkModal.value = true
 }
@@ -260,36 +242,29 @@ const closeHomeworkModal = () => {
   showHomeworkModal.value = false
 }
 
-// 处理文件上传
-const handleFileUpload = (event) => {
-  const file = event.target.files[0]
-  if (file) {
-    formData.value.fileName = file.name
-  }
-}
-
 // 提交作业
-const submitHomework = () => {
-  if (!formData.value.title || !formData.value.classId || !formData.value.publishTime || !formData.value.deadline) {
-    alert('请填写必填字段')
+const submitHomework = async () => {
+  // 根据后端API验证必填字段
+  if (!formData.value.title || !formData.value.content || !formData.value.startTime || !formData.value.endTime) {
+    alert('请填写必填字段（作业名称、作业内容、发布时间、截止时间）')
     return
   }
   
   // 验证发布时间不能晚于截止时间
-  const publishDate = parseDateTime(formData.value.publishTime)
-  const deadlineDate = parseDateTime(formData.value.deadline)
+  const startDate = parseDateTime(formData.value.startTime)
+  const endDate = parseDateTime(formData.value.endTime)
   
-  if (!publishDate || !deadlineDate) {
+  if (!startDate || !endDate) {
     alert('日期时间格式错误')
     return
   }
   
-  if (publishDate > deadlineDate) {
+  if (startDate > endDate) {
     alert('发布时间不能晚于截止时间')
     return
   }
   
-  // 确保日期时间格式完整（添加秒数）
+  // 转换为ISO格式
   const formatDateTime = (dateTimeString) => {
     if (dateTimeString && dateTimeString.length === 16) {
       return dateTimeString + ':00'
@@ -297,42 +272,35 @@ const submitHomework = () => {
     return dateTimeString
   }
   
-  const formattedPublishTime = formatDateTime(formData.value.publishTime)
-  const formattedDeadline = formatDateTime(formData.value.deadline)
+  const formattedStartTime = formatDateTime(formData.value.startTime)
+  const formattedEndTime = formatDateTime(formData.value.endTime)
   
-  if (isEditing.value) {
-    // 更新作业
-    const index = homeworkData.value.findIndex(item => item.id === formData.value.id)
-    if (index !== -1) {
-      homeworkData.value[index] = {
-        ...homeworkData.value[index],
-        title: formData.value.title,
-        classId: formData.value.classId,
-        description: formData.value.description,
-        fileName: formData.value.fileName,
-        publishTime: formattedPublishTime,
-        deadline: formattedDeadline,
-        status: getHomeworkStatus(formattedPublishTime, formattedDeadline)
-      }
+  try {
+    // 使用FormData格式提交
+    const formDataToSubmit = new FormData()
+    formDataToSubmit.append('title', formData.value.title)
+    formDataToSubmit.append('content', formData.value.content)
+    formDataToSubmit.append('startTime', formattedStartTime)
+    formDataToSubmit.append('endTime', formattedEndTime)
+    
+    // 添加附件
+    if (fileInput.value && fileInput.value.files.length > 0) {
+      formDataToSubmit.append('attachments', fileInput.value.files[0])
     }
-    alert('作业更新成功！')
-  } else {
-    // 添加新作业
-    const newHomework = {
-      id: Date.now(),
-      title: formData.value.title,
-      classId: formData.value.classId,
-      description: formData.value.description,
-      fileName: formData.value.fileName,
-      publishTime: formattedPublishTime,
-      deadline: formattedDeadline,
-      status: getHomeworkStatus(formattedPublishTime, formattedDeadline)
+    
+    const response = await adminAPI.publishAssignment(formDataToSubmit)
+    
+    if (response.code === 200) {
+      alert('作业发布成功')
+      closeHomeworkModal()
+      loadHomeworkList()
+    } else {
+      alert('作业发布失败：' + (response.message || '未知错误'))
     }
-    homeworkData.value.unshift(newHomework)
-    alert('作业发布成功！')
+  } catch (error) {
+    alert('作业发布失败，请稍后重试')
+    console.error('发布作业失败:', error)
   }
-  
-  closeHomeworkModal()
 }
 
 // 解析日期时间字符串为本地时间

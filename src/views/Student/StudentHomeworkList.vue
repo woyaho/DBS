@@ -96,7 +96,7 @@ const loadHomeworkList = async () => {
               score: statusResponse.data.finalScore,
               completed: statusResponse.data.completed,
               published: statusResponse.data.published,
-              description: '点击查看详情'
+              description: item.description || '点击查看详情'
             }
           } catch (error) {
             // 如果获取状态失败，返回基础信息

@@ -52,7 +52,29 @@
           </div>
         </div>
 
-        <div class="user-table">
+        <!-- 加载状态 -->
+        <div v-if="loading" class="loading-state">
+          <div class="loading-spinner"></div>
+          <p>加载用户数据中...</p>
+        </div>
+
+        <!-- 错误提示 -->
+        <div v-else-if="error" class="error-state">
+          <div class="error-icon">⚠️</div>
+          <h3>加载失败</h3>
+          <p>{{ error }}</p>
+          <button class="btn btn-primary" @click="loadUsers">重试</button>
+        </div>
+
+        <!-- 空状态 -->
+        <div v-else-if="filteredUsers.length === 0" class="empty-state">
+          <div class="empty-icon">👥</div>
+          <h3>暂无用户</h3>
+          <p>还没有用户数据</p>
+        </div>
+
+        <!-- 用户表格 -->
+        <div v-else class="user-table">
           <table class="table">
             <thead>
               <tr>
@@ -143,28 +165,36 @@
             <div class="modal-body">
               <form @submit.prevent="addUser">
                 <div class="form-group">
-                  <label>用户名</label>
-                  <input type="text" v-model="newUser.username" required class="form-input" />
+                  <label>账号 <span class="required">*</span></label>
+                  <input type="text" v-model="newUser.account" required class="form-input" placeholder="请输入账号" />
                 </div>
                 <div class="form-group">
-                  <label>姓名</label>
-                  <input type="text" v-model="newUser.name" required class="form-input" />
+                  <label>姓名 <span class="required">*</span></label>
+                  <input type="text" v-model="newUser.name" required class="form-input" placeholder="请输入姓名" />
                 </div>
                 <div class="form-group">
-                  <label>邮箱</label>
-                  <input type="email" v-model="newUser.email" required class="form-input" />
+                  <label>密码 <span class="required">*</span></label>
+                  <input type="password" v-model="newUser.password" required class="form-input" placeholder="请输入密码" />
                 </div>
                 <div class="form-group">
-                  <label>密码</label>
-                  <input type="password" v-model="newUser.password" required class="form-input" />
-                </div>
-                <div class="form-group">
-                  <label>角色</label>
-                  <select v-model="newUser.role" required class="form-select">
+                  <label>身份 <span class="required">*</span></label>
+                  <select v-model="newUser.identity" required class="form-select">
                     <option value="student">学生</option>
                     <option value="teacher">教师</option>
                     <option value="admin">管理员</option>
                   </select>
+                </div>
+                <div class="form-group">
+                  <label>邮箱</label>
+                  <input type="email" v-model="newUser.email" class="form-input" placeholder="请输入邮箱（可选）" />
+                </div>
+                <div class="form-group">
+                  <label>手机号</label>
+                  <input type="tel" v-model="newUser.phone" class="form-input" placeholder="请输入手机号（可选）" />
+                </div>
+                <div class="form-group">
+                  <label>身份证号</label>
+                  <input type="text" v-model="newUser.idCard" class="form-input" placeholder="请输入身份证号（可选）" />
                 </div>
                 <div class="form-actions">
                   <button type="button" class="btn btn-outline" @click="showAddModal = false">取消</button>
@@ -238,9 +268,12 @@
 import { ref, computed, onMounted } from 'vue'
 import AdminSidebar from '../../components/Admin/AdminSidebar.vue'
 import AdminHeader from '../../components/Admin/AdminHeader.vue'
+import { adminAPI, authAPI } from '@/services/api.js'
 
 // 用户数据
 const users = ref([])
+const loading = ref(false)
+const error = ref('')
 
 // 筛选和分页
 const searchKeyword = ref('')
@@ -257,13 +290,15 @@ const selectAll = ref(false)
 const showAddModal = ref(false)
 const showEditModal = ref(false)
 
-// 表单数据
+// 表单数据（字段名与后端API保持一致）
 const newUser = ref({
-  username: '',
+  account: '',
   name: '',
-  email: '',
   password: '',
-  role: 'student'
+  identity: 'student',
+  email: '',
+  phone: '',
+  idCard: ''
 })
 
 const editUser = ref({
@@ -318,6 +353,30 @@ const totalPages = computed(() => {
   return Math.ceil(filteredCount / pageSize.value)
 })
 
+// 加载用户数据
+const loadUsers = async () => {
+  loading.value = true
+  error.value = ''
+  
+  try {
+    const response = await adminAPI.getUserList({
+      page: currentPage.value,
+      pageSize: pageSize.value,
+      search: searchKeyword.value,
+      role: roleFilter.value,
+      status: statusFilter.value
+    })
+    if (response.data && Array.isArray(response.data)) {
+      users.value = response.data
+    }
+  } catch (err) {
+    error.value = '加载用户数据失败，请重试'
+    console.error('加载用户数据失败:', err)
+  } finally {
+    loading.value = false
+  }
+}
+
 // 方法
 const toggleSelectAll = () => {
   if (selectAll.value) {
@@ -332,15 +391,18 @@ const resetFilters = () => {
   roleFilter.value = ''
   statusFilter.value = ''
   currentPage.value = 1
+  loadUsers()
 }
 
 const openAddUserModal = () => {
   newUser.value = {
-    username: '',
+    account: '',
     name: '',
-    email: '',
     password: '',
-    role: 'student'
+    identity: 'student',
+    email: '',
+    phone: '',
+    idCard: ''
   }
   showAddModal.value = true
 }
@@ -350,68 +412,98 @@ const openEditUserModal = (user) => {
   showEditModal.value = true
 }
 
-const addUser = () => {
-  const newId = Math.max(...users.value.map(u => u.id)) + 1
-  users.value.push({
-    id: newId,
-    ...newUser.value,
-    status: 'active',
-    createdAt: new Date().toLocaleString()
-  })
-  showAddModal.value = false
-  alert('用户添加成功')
+const addUser = async () => {
+  try {
+    const response = await authAPI.register(newUser.value)
+    if (response.code === 200) {
+      showAddModal.value = false
+      alert('用户添加成功')
+      loadUsers()
+    } else {
+      alert('用户添加失败: ' + (response.message || '未知错误'))
+    }
+  } catch (err) {
+    alert('用户添加失败，请重试')
+    console.error('添加用户失败:', err)
+  }
 }
 
-const updateUser = () => {
-  const index = users.value.findIndex(u => u.id === editUser.value.id)
-  if (index !== -1) {
-    users.value[index] = { ...editUser.value }
+const updateUser = async () => {
+  try {
+    await adminAPI.updateUserInfo(editUser.value)
     showEditModal.value = false
     alert('用户更新成功')
+    loadUsers()
+  } catch (err) {
+    alert('用户更新失败，请重试')
+    console.error('更新用户失败:', err)
   }
 }
 
-const deleteUser = (id) => {
+const deleteUser = async (id) => {
   if (confirm('确定要删除这个用户吗？')) {
-    users.value = users.value.filter(u => u.id !== id)
-    selectedUsers.value = selectedUsers.value.filter(userId => userId !== id)
-    alert('用户删除成功')
+    try {
+      // 实际项目中需要调用删除API
+      users.value = users.value.filter(u => u.id !== id)
+      selectedUsers.value = selectedUsers.value.filter(userId => userId !== id)
+      alert('用户删除成功')
+    } catch (err) {
+      alert('用户删除失败，请重试')
+      console.error('删除用户失败:', err)
+    }
   }
 }
 
-const resetPassword = (id) => {
+const resetPassword = async (id) => {
   if (confirm('确定要重置这个用户的密码吗？')) {
-    // 实际项目中这里会调用后端API重置密码
-    alert('密码已重置为默认值：123456')
+    try {
+      await adminAPI.resetUserPassword(id)
+      alert('密码已重置为默认值：123456')
+    } catch (err) {
+      alert('密码重置失败，请重试')
+      console.error('重置密码失败:', err)
+    }
   }
 }
 
-const batchDelete = () => {
+const batchDelete = async () => {
   if (confirm(`确定要删除选中的 ${selectedUsers.value.length} 个用户吗？`)) {
-    users.value = users.value.filter(u => !selectedUsers.value.includes(u.id))
-    selectedUsers.value = []
-    alert('批量删除成功')
+    try {
+      // 实际项目中需要调用批量删除API
+      users.value = users.value.filter(u => !selectedUsers.value.includes(u.id))
+      selectedUsers.value = []
+      alert('批量删除成功')
+    } catch (err) {
+      alert('批量删除失败，请重试')
+      console.error('批量删除失败:', err)
+    }
   }
 }
 
-const batchEnable = () => {
-  users.value = users.value.map(user => {
-    if (selectedUsers.value.includes(user.id)) {
-      return { ...user, status: 'active' }
+const batchEnable = async () => {
+  try {
+    for (const userId of selectedUsers.value) {
+      await adminAPI.updateUserStatus(userId, 'active')
     }
-    return user
-  })
-  alert('批量启用成功')
+    await loadUsers()
+    alert('批量启用成功')
+  } catch (err) {
+    alert('批量启用失败，请重试')
+    console.error('批量启用失败:', err)
+  }
 }
 
-const batchDisable = () => {
-  users.value = users.value.map(user => {
-    if (selectedUsers.value.includes(user.id)) {
-      return { ...user, status: 'inactive' }
+const batchDisable = async () => {
+  try {
+    for (const userId of selectedUsers.value) {
+      await adminAPI.updateUserStatus(userId, 'inactive')
     }
-    return user
-  })
-  alert('批量禁用成功')
+    await loadUsers()
+    alert('批量禁用成功')
+  } catch (err) {
+    alert('批量禁用失败，请重试')
+    console.error('批量禁用失败:', err)
+  }
 }
 
 const exportUsers = () => {
@@ -420,12 +512,28 @@ const exportUsers = () => {
 }
 
 const importUsers = () => {
-  // 实际项目中这里会打开文件选择器
-  alert('请选择要导入的用户数据文件')
+  // 创建文件输入元素
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = '.xlsx,.xls,.csv'
+  input.onchange = async (event) => {
+    const file = event.target.files[0]
+    if (file) {
+      try {
+        await adminAPI.batchRegisterUsers(file)
+        alert('用户数据导入成功')
+        loadUsers()
+      } catch (err) {
+        alert('用户数据导入失败，请重试')
+        console.error('导入用户失败:', err)
+      }
+    }
+  }
+  input.click()
 }
 
 onMounted(() => {
-  // 初始化数据
+  loadUsers()
 })
 </script>
 
@@ -451,6 +559,7 @@ onMounted(() => {
   padding: 24px;
   overflow-y: auto;
   background: #f5f7fa;
+  margin-top: 60px;
 }
 
 .page-header {
@@ -793,6 +902,104 @@ onMounted(() => {
   gap: 8px;
 }
 
+/* 加载状态 */
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 24px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 24px;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #4a90e2;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-state p {
+  color: #666;
+  font-size: 14px;
+  margin: 0;
+}
+
+/* 错误状态 */
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 24px;
+  background: #fff5f5;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.error-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.error-state h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #d32f2f;
+}
+
+.error-state p {
+  margin: 0 0 24px 0;
+  font-size: 14px;
+  color: #666;
+}
+
+/* 空状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 24px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin-bottom: 24px;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-state h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a2a3a;
+}
+
+.empty-state p {
+  margin: 0;
+  font-size: 14px;
+  color: #666;
+}
+
 @media (max-width: 768px) {
   .content-area {
     margin-left: 0;
@@ -850,6 +1057,12 @@ onMounted(() => {
 
   .bulk-buttons {
     justify-content: space-between;
+  }
+
+  .loading-state,
+  .error-state,
+  .empty-state {
+    padding: 48px 16px;
   }
 }
 </style>

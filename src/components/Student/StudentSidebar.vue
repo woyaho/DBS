@@ -31,15 +31,23 @@ const navigateTo = (path) => {
 /* 侧边栏 */
 .sidebar {
   width: 200px;
+  min-width: 200px;
+  max-width: 200px;
   background: #F7F7F7;
   border-right: 1px solid #e0e0e0;
+  display: -webkit-box;
+  display: -ms-flexbox;
   display: flex;
+  -webkit-box-orient: vertical;
+  -webkit-box-direction: normal;
+  -ms-flex-direction: column;
   flex-direction: column;
   position: fixed;
   top: 0;
   left: 0;
   height: 100vh;
   z-index: 90;
+  flex-shrink: 0;
 }
 
 .logo-area {

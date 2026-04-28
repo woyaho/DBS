@@ -13,22 +13,28 @@
         <Breadcrumb />
 
         <main class="main-content">
+          <!-- 加载状态 -->
+          <div v-if="loading" class="loading-container">
+            <div class="loading-spinner"></div>
+            <p>加载中...</p>
+          </div>
+
           <!-- 统计卡片 -->
-          <div class="stats-grid">
+          <div v-else class="stats-grid">
             <div class="stat-card">
               <h3>总用户数</h3>
-              <p style="font-size: 32px; font-weight: bold; color: var(--primary-color);">1,284</p>
-              <p>其中学生 1,056 人，教师 128 人</p>
+              <p style="font-size: 32px; font-weight: bold; color: var(--primary-color);">{{ totalUsers.toLocaleString() }}</p>
+              <p>其中学生 {{ studentCount.toLocaleString() }} 人，教师 {{ teacherCount.toLocaleString() }} 人</p>
             </div>
             <div class="stat-card">
-              <h3>今日访问</h3>
-              <p style="font-size: 32px; font-weight: bold; color: var(--success-color);">342</p>
-              <p>较昨日 +12%</p>
+              <h3>教学班总数</h3>
+              <p style="font-size: 32px; font-weight: bold; color: var(--success-color);">{{ classCount }}</p>
+              <p>共 {{ totalStudentsInClasses.toLocaleString() }} 名学生</p>
             </div>
             <div class="stat-card">
-              <h3>系统状态</h3>
-              <p style="font-size: 32px; font-weight: bold; color: var(--success-color);">正常</p>
-              <p>CPU 23% · 内存 45%</p>
+              <h3>待处理反馈</h3>
+              <p style="font-size: 32px; font-weight: bold; color: var(--warning-color);">{{ feedbackCount }}</p>
+              <p>等待管理员处理</p>
             </div>
           </div>
 
@@ -36,9 +42,9 @@
           <div class="card">
             <h3>待处理事项</h3>
             <ul style="margin-top: 16px; list-style: none;">
-              <li style="padding: 12px 0; border-bottom: 1px solid var(--border-color);">🔄 3 个用户账号待审核</li>
-              <li style="padding: 12px 0; border-bottom: 1px solid var(--border-color);">📝 2 条系统反馈待回复</li>
-              <li style="padding: 12px 0;">⚠️ 1 条异常登录告警</li>
+              <li style="padding: 12px 0; border-bottom: 1px solid var(--border-color);">🔄 {{ pendingUsers }} 个用户账号待审核</li>
+              <li style="padding: 12px 0; border-bottom: 1px solid var(--border-color);">📝 {{ feedbackCount }} 条系统反馈待回复</li>
+              <li style="padding: 12px 0;">📊 数据同步完成</li>
             </ul>
           </div>
         </main>
@@ -53,11 +59,21 @@ import { useRouter } from 'vue-router'
 import AdminSidebar from '../../components/Admin/AdminSidebar.vue'
 import AdminHeader from '../../components/Admin/AdminHeader.vue'
 import Breadcrumb from '../../components/Breadcrumb.vue'
+import { adminAPI } from '../../services/api.js'
 
 const router = useRouter()
 const userName = ref('管理员')
-const activeUsers = ref(342)
 const dropdownOpen = ref(false)
+
+// 统计数据
+const loading = ref(true)
+const totalUsers = ref(0)
+const studentCount = ref(0)
+const teacherCount = ref(0)
+const classCount = ref(0)
+const totalStudentsInClasses = ref(0)
+const feedbackCount = ref(0)
+const pendingUsers = ref(0)
 
 onMounted(() => {
   const user = localStorage.getItem('user')
@@ -65,6 +81,9 @@ onMounted(() => {
     const userData = JSON.parse(user)
     userName.value = userData.name || userData.username
   }
+
+  // 加载统计数据
+  loadStatistics()
 
   // 点击外部关闭下拉菜单
   document.addEventListener('click', (e) => {
@@ -74,6 +93,48 @@ onMounted(() => {
     }
   })
 })
+
+const loadStatistics = async () => {
+  loading.value = true
+  try {
+    // 获取用户统计
+    const userResponse = await adminAPI.getUserList({})
+    if (userResponse.code === 200 && userResponse.data) {
+      const users = userResponse.data.list || []
+      studentCount.value = users.filter(u => u.identity === 'student').length
+      teacherCount.value = users.filter(u => u.identity === 'teacher').length
+      totalUsers.value = users.length
+      pendingUsers.value = users.filter(u => u.status === 'pending').length
+    }
+
+    // 获取班级统计
+    const classResponse = await adminAPI.getClassCounts()
+    if (classResponse.code === 200 && classResponse.data) {
+      if (Array.isArray(classResponse.data)) {
+        classCount.value = classResponse.data.length
+        totalStudentsInClasses.value = classResponse.data.reduce((sum, cls) => sum + (cls.studentCount || 0), 0)
+      }
+    }
+
+    // 获取反馈统计
+    const feedbackResponse = await adminAPI.getFeedbacks()
+    if (feedbackResponse.code === 200 && feedbackResponse.data) {
+      feedbackCount.value = feedbackResponse.data.length || 0
+    }
+  } catch (error) {
+    console.error('加载统计数据失败:', error)
+    // 使用默认值
+    totalUsers.value = 0
+    studentCount.value = 0
+    teacherCount.value = 0
+    classCount.value = 0
+    totalStudentsInClasses.value = 0
+    feedbackCount.value = 0
+    pendingUsers.value = 0
+  } finally {
+    loading.value = false
+  }
+}
 
 const toggleDropdown = () => {
   dropdownOpen.value = !dropdownOpen.value
@@ -130,6 +191,34 @@ const logout = () => {
   padding: var(--spacing-lg);
   overflow-y: auto;
   background: #f5f7fa;
+}
+
+/* 加载状态 */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid var(--primary-color);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-container p {
+  margin-top: 16px;
+  color: #666;
 }
 
 .stats-grid {

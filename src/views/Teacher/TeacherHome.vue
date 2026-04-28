@@ -22,13 +22,10 @@
             </div>
             <div class="stat-card">
               <h3>班级人数</h3>
-              <p style="font-size: 32px; font-weight: bold; color: var(--primary-color);">48</p>
-              <p>人 · 高三(1)班</p>
-            </div>
-            <div class="stat-card">
-              <h3>今日课程</h3>
-              <p style="font-size: 32px; font-weight: bold; color: var(--success-color);">3</p>
-              <p>节 · 剩余2节</p>
+              <p v-if="className" style="font-size: 32px; font-weight: bold; color: var(--primary-color);">{{ classCount }}</p>
+              <p v-else style="font-size: 32px; font-weight: bold; color: var(--text-light);">-</p>
+              <p v-if="className">人 · {{ className }}</p>
+              <p v-else style="color: var(--text-light);">暂未分配班级</p>
             </div>
           </div>
 
@@ -53,13 +50,33 @@ import { useRouter } from 'vue-router'
 import TeacherSidebar from '@/components/Teacher/TeacherSidebar.vue'
 import TeacherHeader from '@/components/Teacher/TeacherHeader.vue'
 import Breadcrumb from '@/components/Breadcrumb.vue'
+import { teacherAPI } from '@/services/api.js'
 
 const router = useRouter()
-const pendingCount = ref(12)
+const pendingCount = ref(0)
+const classCount = ref(0)
+const className = ref('')
 
 onMounted(() => {
-  // 可以在这里加载统计数据
+  loadStatistics()
 })
+
+const loadStatistics = async () => {
+  try {
+    // 获取待批改作业数量
+    const uncheckedHomeworks = await teacherAPI.getUncheckedHomeworks()
+    if (uncheckedHomeworks.code === 200) {
+      pendingCount.value = uncheckedHomeworks.data?.length || 0
+    }
+
+    // 这里可以添加获取班级信息的API调用
+    // 暂时使用默认值
+    classCount.value = 48
+    className.value = '高三(1)班'
+  } catch (error) {
+    console.error('加载统计数据失败:', error)
+  }
+}
 
 const goToHomeworkReview = () => {
   router.push('/teacher/homework')
@@ -101,7 +118,7 @@ const goToHomeworkReview = () => {
 /* 统计卡片 */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 20px;
   margin-bottom: 24px;
 }

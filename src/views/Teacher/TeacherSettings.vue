@@ -32,26 +32,7 @@
                     <input type="text" v-model="userInfo.nickname" class="form-input" placeholder="请输入昵称" />
                   </div>
                 </div>
-                <div class="form-row">
-                  <div class="form-group">
-                    <label>邮箱</label>
-                    <div class="input-with-action">
-                      <input type="email" v-model="userInfo.email" class="form-input" placeholder="请输入邮箱" />
-                      <button class="btn btn-sm" :class="userInfo.emailVerified ? 'btn-success' : 'btn-primary'" @click="verifyEmail">
-                        {{ userInfo.emailVerified ? '已验证' : '验证' }}
-                      </button>
-                    </div>
-                  </div>
-                  <div class="form-group">
-                    <label>手机号</label>
-                    <div class="input-with-action">
-                      <input type="tel" v-model="userInfo.phone" class="form-input" placeholder="请输入手机号" />
-                      <button class="btn btn-sm" :class="userInfo.phoneVerified ? 'btn-success' : 'btn-primary'" @click="verifyPhone">
-                        {{ userInfo.phoneVerified ? '已绑定' : '绑定' }}
-                      </button>
-                    </div>
-                  </div>
-                </div>
+
                 <div class="form-actions">
                   <button class="btn btn-primary" @click="saveProfile">保存修改</button>
                 </div>
@@ -83,8 +64,9 @@
                   <span class="error-text" v-if="passwordError">{{ passwordError }}</span>
                 </div>
                 <div class="form-actions">
-                  <button class="btn btn-primary" @click="changePassword" :disabled="!canChangePassword">修改密码</button>
-                </div>
+                    <button class="btn btn-primary" @click="changePassword" :disabled="!canChangePassword">修改密码</button>
+                    <a href="/forget-password" class="forgot-password-link">忘记密码？</a>
+                  </div>
               </div>
             </div>
           </div>
@@ -195,14 +177,30 @@ const saveProfile = () => {
 }
 
 // 修改密码
-const changePassword = () => {
+const changePassword = async () => {
   if (passwordForm.value.newPassword !== passwordForm.value.confirmPassword) {
     passwordError.value = '两次输入的密码不一致'
     return
   }
   passwordError.value = ''
-  alert('密码修改成功！')
-  passwordForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+  
+  try {
+    const response = await authAPI.changePassword({
+      oldPassword: passwordForm.value.oldPassword,
+      newPassword: passwordForm.value.newPassword,
+      confirmPassword: passwordForm.value.confirmPassword
+    })
+    
+    if (response.code === 200) {
+      alert('密码修改成功！')
+      passwordForm.value = { oldPassword: '', newPassword: '', confirmPassword: '' }
+    } else {
+      passwordError.value = response.message || '密码修改失败'
+    }
+  } catch (error) {
+    passwordError.value = '密码修改失败，请检查当前密码是否正确'
+    console.error('修改密码失败:', error)
+  }
 }
 </script>
 
@@ -377,6 +375,21 @@ const changePassword = () => {
 
 .form-actions {
   margin-top: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.forgot-password-link {
+  font-size: 14px;
+  color: #1E88E5;
+  text-decoration: none;
+  transition: color 0.3s;
+}
+
+.forgot-password-link:hover {
+  color: #1976D2;
+  text-decoration: underline;
 }
 
 /* 密码强度 */

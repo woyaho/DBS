@@ -125,6 +125,11 @@
                       <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
                     </button>
                     <input type="file" ref="imageInput" style="display: none" accept="image/*" @change="handleImageUpload">
+                    <!-- 文件 -->
+                    <button class="toolbar-btn" @click="triggerFileUpload" title="上传文件">
+                      <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 2 2h8c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                    </button>
+                    <input type="file" ref="fileInput" style="display: none" @change="handleFileUpload">
                     <!-- 公式 -->
                     <button class="toolbar-btn" @click="insertFormula" title="插入公式">
                       <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
@@ -143,6 +148,11 @@
                   <div ref="editorContent" class="editor-content" contenteditable="true" @input="updateContent" placeholder="请输入帖子内容"></div>
                 </div>
               </div>
+              <!-- 错误提示 -->
+              <div v-if="error" class="error-message">
+                {{ error }}
+              </div>
+              
               <div class="form-actions">
                 <div class="anonymous-option">
                   <label class="checkbox-label">
@@ -151,8 +161,11 @@
                   </label>
                 </div>
                 <div class="action-buttons">
-                  <button class="btn-secondary" @click="goBack">取消</button>
-                  <button class="btn-primary" @click="submitNewPost">发布帖子</button>
+                  <button class="btn-secondary" @click="goBack" :disabled="loading">取消</button>
+                  <button class="btn-primary" @click="submitNewPost" :disabled="loading">
+                    <span v-if="loading">发布中...</span>
+                    <span v-else>发布帖子</span>
+                  </button>
                 </div>
               </div>
             </div>
@@ -169,8 +182,13 @@ import { useRouter } from 'vue-router'
 import StudentSidebar from '@/components/Student/StudentSidebar.vue'
 import StudentHeader from '@/components/Student/StudentHeader.vue'
 import Breadcrumb from '@/components/Breadcrumb.vue'
+import { forumAPI } from '@/services/api.js'
 
 const router = useRouter()
+
+// 状态管理
+const loading = ref(false)
+const error = ref('')
 
 // 分类数据
 const categories = ref([
@@ -198,103 +216,11 @@ const tagInput = ref('')
 // 图片输入引用
 const imageInput = ref(null)
 const ocrInput = ref(null)
+const fileInput = ref(null)
 const editorContent = ref(null)
 
-// 帖子数据（模拟）
-const postsData = ref([
-  {
-    id: 1,
-    title: 'PostgreSQL 与 MySQL 的性能对比分析',
-    content: '最近在项目中需要选择数据库，对 PostgreSQL 和 MySQL 进行了一些性能测试。测试场景包括：1. 大量数据的插入性能 2. 复杂查询的执行速度 3. 并发处理能力 4. 索引优化效果...',
-    author: '数据库爱好者',
-    date: '2025-03-20',
-    views: 328,
-    replies: 15,
-    categoryId: 'performance',
-    tags: ['性能测试', '数据库对比'],
-    isTop: true,
-    isEssence: true,
-    isFavorite: false,
-    replyList: [
-      {
-        author: 'SQL达人',
-        date: '2025-03-21',
-        content: '感谢分享！我也做过类似的测试，PostgreSQL 在复杂查询和事务处理方面确实表现更好。'
-      },
-      {
-        author: '数据库新手',
-        date: '2025-03-22',
-        content: '请问测试环境是怎样的？硬件配置如何？'
-      }
-    ]
-  },
-  {
-    id: 2,
-    title: 'SQL 优化技巧分享',
-    content: '在编写 SQL 查询时，有一些常见的优化技巧可以显著提高查询性能：1. 合理使用索引 2. 避免 SELECT * 3. 使用 JOIN 替代子查询 4. 适当使用视图和存储过程...',
-    author: 'SQL专家',
-    date: '2025-03-18',
-    views: 512,
-    replies: 23,
-    categoryId: 'sql',
-    tags: ['SQL优化', '性能调优'],
-    isTop: false,
-    isEssence: true,
-    isFavorite: false,
-    replyList: [
-      {
-        author: '数据库学习者',
-        date: '2025-03-19',
-        content: '非常实用的技巧，特别是关于索引的使用部分，收获很大！'
-      }
-    ]
-  },
-  {
-    id: 3,
-    title: '数据库事务隔离级别详解',
-    content: '事务隔离级别是数据库并发控制的重要概念，不同的隔离级别会影响数据一致性和并发性能。本文详细介绍了 SQL 标准中的四种隔离级别：读未提交、读已提交、可重复读和串行化...',
-    author: '数据库研究员',
-    date: '2025-03-15',
-    views: 456,
-    replies: 18,
-    categoryId: 'db-basic',
-    tags: ['事务', '隔离级别'],
-    isTop: true,
-    isEssence: false,
-    isFavorite: false,
-    replyList: []
-  },
-  {
-    id: 4,
-    title: '数据库连接池配置最佳实践',
-    content: '连接池是提高数据库性能的重要手段，但配置不当会导致性能问题。本文分享连接池配置的最佳实践，包括：1. 连接池大小的设置 2. 连接超时时间的配置 3. 连接验证机制...',
-    author: '系统架构师',
-    date: '2025-03-10',
-    views: 289,
-    replies: 12,
-    categoryId: 'performance',
-    tags: ['连接池', '性能优化'],
-    isTop: false,
-    isEssence: false,
-    isFavorite: false,
-    replyList: []
-  },
-  {
-    id: 5,
-    title: '如何处理数据库死锁问题',
-    content: '死锁是数据库并发操作中常见的问题，本文介绍死锁的产生原因和解决方法：1. 死锁的定义和产生条件 2. 死锁的检测方法 3. 死锁的预防和避免策略...',
-    author: '数据库管理员',
-    date: '2025-03-05',
-    views: 312,
-    replies: 16,
-    categoryId: 'troubleshooting',
-    tags: ['死锁', '并发'],
-    isTop: false,
-    isEssence: false,
-    isFavorite: false,
-    replyList: []
-  }
-])
+// 上传的文件列表
+const uploadedFiles = ref([])
 
 // 返回论坛
 const goBack = () => {
@@ -394,42 +320,68 @@ const handleOCR = (event) => {
   }
 }
 
-// 获取学生姓名（模拟）
-const getStudentName = () => {
-  const user = localStorage.getItem('user')
-  if (user) {
-    const userData = JSON.parse(user)
-    return userData.name || '学生'
+// 触发文件上传
+const triggerFileUpload = () => {
+  if (fileInput.value) {
+    fileInput.value.click()
   }
-  return '学生'
+}
+
+// 处理文件上传
+const handleFileUpload = (event) => {
+  const file = event.target.files[0]
+  if (file) {
+    // 模拟文件上传，实际项目中需要调用API
+    const fileId = Date.now()
+    uploadedFiles.value.push({
+      id: fileId,
+      name: file.name,
+      size: file.size
+    })
+    
+    // 在编辑器中插入文件链接
+    const fileLink = `<a href="javascript:void(0)" onclick="window.open('${API_BASE_URL}/student/post/view-file?fileId=${fileId}', '_blank')" style="color: #4a90e2; text-decoration: underline;">📎 ${file.name}</a>`
+    execCommand('insertHTML', fileLink)
+    event.target.value = ''
+  }
 }
 
 // 提交新帖子
-const submitNewPost = () => {
+const submitNewPost = async () => {
   if (!newPost.value.title || !newPost.value.content) {
     alert('请填写标题和内容')
     return
   }
   
-  const newPostData = {
-    id: postsData.value.length + 1,
-    title: newPost.value.title,
-    content: newPost.value.content,
-    author: isAnonymous.value ? '匿名用户' : getStudentName(),
-    isAnonymous: isAnonymous.value,
-    date: new Date().toISOString().split('T')[0],
-    views: 0,
-    replies: 0,
-    categoryId: newPost.value.categoryId,
-    tags: newPost.value.tags,
-    isTop: false,
-    isEssence: false,
-    isFavorite: false,
-    replyList: []
-  }
+  loading.value = true
+  error.value = ''
   
-  postsData.value.unshift(newPostData)
-  router.push(`/student/forum/post/${newPostData.id}`)
+  try {
+    // 创建FormData对象
+    const formData = new FormData()
+    formData.append('title', newPost.value.title)
+    formData.append('content', newPost.value.content)
+    formData.append('categoryId', newPost.value.categoryId)
+    formData.append('tags', newPost.value.tags.join(','))
+    formData.append('anonymous', isAnonymous.value ? 'true' : 'false')
+    
+    // 添加文件（实际项目中需要从fileInput中获取文件）
+    if (fileInput.value && fileInput.value.files.length > 0) {
+      formData.append('file', fileInput.value.files[0])
+    }
+    
+    const response = await forumAPI.createPost(formData)
+    
+    if (response.code === 200) {
+      alert('帖子发布成功！')
+      router.push('/student/forum')
+    }
+  } catch (err) {
+    error.value = '发布帖子失败，请重试'
+    console.error('发布帖子失败:', err)
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(() => {
@@ -791,6 +743,17 @@ onMounted(() => {
 
 .btn-primary:hover {
   background: #357abd;
+}
+
+/* 错误提示 */
+.error-message {
+  background: #fff5f5;
+  color: #d32f2f;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  border-left: 4px solid #d32f2f;
 }
 
 /* 响应式 */

@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Login from '../views/Login.vue'
+import ForgetPassword from '../views/ForgetPassword.vue'
 import NotFound from '../views/NotFound.vue'
 import StudentHome from '../views/student/StudentHome.vue'
 import TeacherHome from '../views/teacher/TeacherHome.vue'
@@ -23,6 +24,7 @@ import TeacherPrepare from '../views/teacher/TeacherPrepare.vue'
 import TeacherGradeManage from '../views/teacher/TeacherGradeManage.vue'
 import TeacherStatistics from '../views/teacher/TeacherStatistics.vue'
 
+
 const routes = [
   {
     path: '/',
@@ -32,6 +34,12 @@ const routes = [
     path: '/login',
     name: 'Login',
     component: Login,
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/forget-password',
+    name: 'ForgetPassword',
+    component: ForgetPassword,
     meta: { requiresAuth: false }
   },
 
@@ -161,6 +169,7 @@ const routes = [
     component: TeacherStatistics,
     meta: { requiresAuth: true, role: 'teacher' }
   },
+
   {
     path: '/teacher/classes',
     name: 'TeacherClassSelect',
@@ -177,12 +186,6 @@ const routes = [
     path: '/admin/users',
     name: 'AdminUserManage',
     component: () => import('../views/Admin/AdminUserManage.vue'),
-    meta: { requiresAuth: true, role: 'admin' }
-  },
-  {
-    path: '/admin/roles',
-    name: 'AdminRoleManage',
-    component: () => import('../views/Admin/AdminRoleManage.vue'),
     meta: { requiresAuth: true, role: 'admin' }
   },
   {
