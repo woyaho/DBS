@@ -7,13 +7,18 @@ import TeacherHome from '../views/teacher/TeacherHome.vue'
 import AdminHome from '../views/Admin/AdminHome.vue'
 import StudentHomeworkSubmit from '../views/student/StudentHomeworkSubmit.vue'
 import StudentHomeworkList from '../views/student/StudentHomeworkList.vue'
-import StudentGradeQuery from '../views/student/StudentGradeQuery.vue'
 import StudentForum from '../views/student/StudentForum.vue'
 import StudentCreatePost from '../views/student/StudentCreatePost.vue'
 import StudentPostDetail from '../views/student/StudentPostDetail.vue'
 import StudentLearningAid from '../views/student/StudentLearningAid.vue'
 import StudentQuiz from '../views/student/StudentQuiz.vue'
 import StudentSettings from '../views/student/StudentSettings.vue'
+import StudentFavorites from '../views/student/StudentFavorites.vue'
+import StudentSmartPaperGenerate from '../views/student/StudentSmartPaperGenerate.vue'
+import StudentSmartPaperList from '../views/student/StudentSmartPaperList.vue'
+import StudentSmartPaperAnswer from '../views/student/StudentSmartPaperAnswer.vue'
+import StudentSmartPaperResult from '../views/student/StudentSmartPaperResult.vue'
+import StudentGradeQuery from '../views/student/StudentGradeQuery.vue'
 import TeacherHomeworkReview from '../views/teacher/TeacherHomeworkReview.vue'
 import TeacherSettings from '../views/teacher/TeacherSettings.vue'
 import TeacherHomeworkList from '../views/teacher/TeacherHomeworkList.vue'
@@ -21,8 +26,10 @@ import TeacherForum from '../views/teacher/TeacherForum.vue'
 import TeacherCreatePost from '../views/teacher/TeacherCreatePost.vue'
 import TeacherPostDetail from '../views/teacher/TeacherPostDetail.vue'
 import TeacherPrepare from '../views/teacher/TeacherPrepare.vue'
-import TeacherGradeManage from '../views/teacher/TeacherGradeManage.vue'
-import TeacherStatistics from '../views/teacher/TeacherStatistics.vue'
+import TeacherFavorites from '../views/teacher/TeacherFavorites.vue'
+import TeacherSmartPaperList from '../views/teacher/TeacherSmartPaperList.vue'
+import TeacherSmartPaperGenerate from '../views/teacher/TeacherSmartPaperGenerate.vue'
+import TeacherSmartPaperDetail from '../views/teacher/TeacherSmartPaperDetail.vue'
 
 
 const routes = [
@@ -68,12 +75,6 @@ const routes = [
     meta: { requiresAuth: true, role: 'student' }
   },
   {
-    path: '/student/grades',
-    name: 'StudentGradeQuery',
-    component: StudentGradeQuery,
-    meta: { requiresAuth: true, role: 'student' }
-  },
-  {
     path: '/student/forum',
     name: 'StudentForum',
     component: StudentForum,
@@ -110,22 +111,62 @@ const routes = [
     meta: { requiresAuth: true, role: 'student' }
   },
   {
+    path: '/student/favorites',
+    name: 'StudentFavorites',
+    component: StudentFavorites,
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/student/smart-paper',
+    redirect: '/student/smart-paper/list'
+  },
+  {
+    path: '/student/smart-paper/generate',
+    name: 'StudentSmartPaperGenerate',
+    component: StudentSmartPaperGenerate,
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/student/smart-paper/list',
+    name: 'StudentSmartPaperList',
+    component: StudentSmartPaperList,
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/student/smart-paper/answer/:paperId',
+    name: 'StudentSmartPaperAnswer',
+    component: StudentSmartPaperAnswer,
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/student/smart-paper/result/:paperId',
+    name: 'StudentSmartPaperResult',
+    component: StudentSmartPaperResult,
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
+    path: '/student/grades',
+    name: 'StudentGradeQuery',
+    component: StudentGradeQuery,
+    meta: { requiresAuth: true, role: 'student' }
+  },
+  {
     path: '/teacher/dashboard',
     name: 'TeacherHome',
     component: TeacherHome,
-    meta: { requiresAuth: true, role: 'teacher' }
+    meta: { requiresAuth: true, role: 'teacher', keepAlive: true }
   },
   {
     path: '/teacher/homework',
     name: 'TeacherHomeworkList',
     component: TeacherHomeworkList,
-    meta: { requiresAuth: true, role: 'teacher' }
+    meta: { requiresAuth: true, role: 'teacher', keepAlive: true }
   },
   {
     path: '/teacher/homework/review/:id',
     name: 'TeacherHomeworkReview',
     component: TeacherHomeworkReview,
-    meta: { requiresAuth: true, role: 'teacher' }
+    meta: { requiresAuth: true, role: 'teacher', keepAlive: true }
   },
   {
     path: '/teacher/forum',
@@ -146,6 +187,12 @@ const routes = [
     meta: { requiresAuth: true, role: 'teacher' }
   },
   {
+    path: '/teacher/favorites',
+    name: 'TeacherFavorites',
+    component: TeacherFavorites,
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  {
     path: '/teacher/prepare',
     name: 'TeacherPrepare',
     component: TeacherPrepare,
@@ -158,15 +205,25 @@ const routes = [
     meta: { requiresAuth: true, role: 'teacher' }
   },
   {
-    path: '/teacher/grades',
-    name: 'TeacherGradeManage',
-    component: TeacherGradeManage,
+    path: '/teacher/smart-paper',
+    redirect: '/teacher/smart-paper/list'
+  },
+  {
+    path: '/teacher/smart-paper/list',
+    name: 'TeacherSmartPaperList',
+    component: TeacherSmartPaperList,
     meta: { requiresAuth: true, role: 'teacher' }
   },
   {
-    path: '/teacher/statistics',
-    name: 'TeacherStatistics',
-    component: TeacherStatistics,
+    path: '/teacher/smart-paper/generate',
+    name: 'TeacherSmartPaperGenerate',
+    component: TeacherSmartPaperGenerate,
+    meta: { requiresAuth: true, role: 'teacher' }
+  },
+  {
+    path: '/teacher/smart-paper/detail/:paperId',
+    name: 'TeacherSmartPaperDetail',
+    component: TeacherSmartPaperDetail,
     meta: { requiresAuth: true, role: 'teacher' }
   },
 
@@ -204,6 +261,12 @@ const routes = [
       path: '/admin/homework',
       name: 'AdminHomeworkManage',
       component: () => import('@/views/Admin/AdminHomeworkManage.vue'),
+      meta: { requiresAuth: true, role: 'admin' }
+    },
+    {
+      path: '/admin/feedback',
+      name: 'AdminFeedback',
+      component: () => import('@/views/Admin/AdminFeedback.vue'),
       meta: { requiresAuth: true, role: 'admin' }
     },
   {

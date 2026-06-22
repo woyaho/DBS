@@ -25,12 +25,20 @@
                 />
                 <button class="search-btn" @click="handleSearch">搜索</button>
               </div>
-              <div class="sort-options">
-                <select v-model="sortBy" class="sort-select" @change="handleSort">
-                  <option value="latest">最新发布</option>
-                  <option value="mostViews">最多浏览</option>
-                  <option value="mostReplies">最多回复</option>
-                </select>
+              <div class="actions-bar">
+                <div class="sort-options">
+                  <select v-model="sortBy" class="sort-select" @change="handleSort">
+                    <option value="latest">最新发布</option>
+                    <option value="hot">最热收藏</option>
+                    <option value="replyCount">最多回复</option>
+                  </select>
+                </div>
+                <div class="filter-options">
+                  <select v-model="filter" class="filter-select" @change="handleFilter">
+                    <option value="">全部</option>
+                    <option value="teacher_replied">仅看教师回复</option>
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -81,7 +89,7 @@
                   <div class="post-header-actions">
                     <span v-if="post.isTop" class="post-badge top-badge">置顶</span>
                     <span v-if="post.isEssence" class="post-badge essence-badge">精华</span>
-                    <span class="post-category">{{ getCategoryName(post.categoryId) }}</span>
+                    <span v-if="getCategoryName(post.categoryId) !== '未知'" class="post-category">{{ getCategoryName(post.categoryId) }}</span>
                     <button class="action-btn" @click.stop="toggleFavorite(post)" :class="{ active: post.isFavorite }">
                       {{ post.isFavorite ? '取消收藏' : '收藏' }}
                     </button>
@@ -90,7 +98,6 @@
                 <div class="post-meta">
                   <span class="post-author">{{ post.author }}</span>
                   <span class="post-date">{{ post.date }}</span>
-                  <span class="post-views">{{ post.views }} 浏览</span>
                   <span class="post-replies">{{ post.replies }} 回复</span>
                   <span class="post-tags">
                     <span v-for="tag in post.tags" :key="tag" class="post-tag">{{ tag }}</span>
@@ -101,9 +108,9 @@
             </div>
 
             <div class="pagination">
-              <button class="page-btn" :disabled="currentPage === 1" @click="currentPage--">上一页</button>
+              <button class="page-btn" :disabled="currentPage === 1" @click="goToPrevPage">上一页</button>
               <span class="page-info">第 {{ currentPage }} 页，共 {{ totalPages }} 页</span>
-              <button class="page-btn" :disabled="currentPage === totalPages" @click="currentPage++">下一页</button>
+              <button class="page-btn" :disabled="currentPage === totalPages" @click="goToNextPage">下一页</button>
             </div>
           </div>
         </main>
@@ -113,7 +120,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import TeacherSidebar from '@/components/Teacher/TeacherSidebar.vue'
 import TeacherHeader from '@/components/Teacher/TeacherHeader.vue'
@@ -126,6 +133,7 @@ const selectedCategory = ref('all')
 const currentPage = ref(1)
 const searchKeyword = ref('')
 const sortBy = ref('latest')
+const filter = ref('')
 const loading = ref(false)
 const error = ref('')
 
@@ -139,6 +147,7 @@ const categories = ref([
 ])
 
 const postsData = ref([])
+const totalPages = ref(1)
 
 const getAvatarColor = (author) => {
   const colors = ['#4a90e2', '#50e3c2', '#f5a623', '#d0021b', '#9013fe', '#417505'];
@@ -162,7 +171,8 @@ const loadPosts = async () => {
       pageSize: 10,
       search: searchKeyword.value,
       categoryId: selectedCategory.value === 'all' ? '' : selectedCategory.value,
-      sort: sortBy.value
+      sortBy: sortBy.value === 'latest' ? 'time' : sortBy.value,
+      filter: filter.value
     })
 
     const data = response.data
@@ -171,31 +181,47 @@ const loadPosts = async () => {
         id: post.postId,
         title: post.title || '无标题',
         content: post.content || post.body || post.text || '',
-        author: post.authorName || post.author || '匿名用户',
-        date: post.createTime ? new Date(post.createTime).toLocaleString() : new Date().toLocaleString(),
+        author: post.authorDisplayName || post.authorUsername || post.authorName || post.author || '匿名用户',
+        date: post.createdAt ? new Date(post.createdAt).toLocaleString() : (post.createTime ? new Date(post.createTime).toLocaleString() : new Date().toLocaleString()),
         views: post.viewCount || post.views || 0,
         replies: post.commentCount || post.replies || 0,
         categoryId: post.categoryId,
-        isTop: post.isTop === 1,
-        isEssence: post.isEssence === 1,
-        isFavorite: false,
+        isTop: post.isTop === 1 || post.top === true,
+        isEssence: post.isEssence === 1 || post.essence === true,
+        isFavorite: post.favorite === true,
+        favoriteCount: post.favoriteCount || 0,
         tags: post.tags ? post.tags.split(',') : []
       }))
+      // 尝试从响应中获取总页数
+      if (response.totalPages !== undefined) {
+        totalPages.value = response.totalPages
+      } else if (response.pageInfo && response.pageInfo.totalPages) {
+        totalPages.value = response.pageInfo.totalPages
+      }
     } else if (data && data.data && Array.isArray(data.data)) {
       postsData.value = data.data.map(post => ({
         id: post.postId,
         title: post.title || '无标题',
         content: post.content || post.body || post.text || '',
-        author: post.authorName || post.author || '匿名用户',
-        date: post.createTime ? new Date(post.createTime).toLocaleString() : new Date().toLocaleString(),
+        author: post.authorDisplayName || post.authorUsername || post.authorName || post.author || '匿名用户',
+        date: post.createdAt ? new Date(post.createdAt).toLocaleString() : (post.createTime ? new Date(post.createTime).toLocaleString() : new Date().toLocaleString()),
         views: post.viewCount || post.views || 0,
         replies: post.commentCount || post.replies || 0,
         categoryId: post.categoryId,
-        isTop: post.isTop === 1,
-        isEssence: post.isEssence === 1,
-        isFavorite: false,
+        isTop: post.isTop === 1 || post.top === true,
+        isEssence: post.isEssence === 1 || post.essence === true,
+        isFavorite: post.favorite === true,
+        favoriteCount: post.favoriteCount || 0,
         tags: post.tags ? post.tags.split(',') : []
       }))
+      // 尝试从响应中获取总页数
+      if (response.totalPages !== undefined) {
+        totalPages.value = response.totalPages
+      } else if (response.pageInfo && response.pageInfo.totalPages) {
+        totalPages.value = response.pageInfo.totalPages
+      } else if (data.totalPages) {
+        totalPages.value = data.totalPages
+      }
     }
   } catch (err) {
     error.value = '加载帖子失败，请重试'
@@ -203,15 +229,38 @@ const loadPosts = async () => {
   } finally {
     loading.value = false
   }
+
+  // 加载帖子后，获取收藏列表并更新收藏状态
+  await loadFavoriteStatus()
+}
+
+// 加载收藏状态
+const loadFavoriteStatus = async () => {
+  try {
+    const response = await forumAPI.getMyFavorites()
+
+    if (response && response.data && Array.isArray(response.data)) {
+      const favoritePostIds = response.data.map(item => item.postId)
+
+      // 更新每个帖子的收藏状态
+      postsData.value.forEach(post => {
+        post.isFavorite = favoritePostIds.includes(post.id)
+      })
+    }
+  } catch (err) {
+    console.error('加载收藏状态失败:', err)
+  }
 }
 
 const filteredPosts = computed(() => {
   return postsData.value
 })
 
-const totalPages = computed(() => {
-  return Math.ceil(postsData.value.length / 10)
-})
+const goToPage = async (page) => {
+  if (page < 1 || page > totalPages.value) return
+  currentPage.value = page
+  await loadPosts()
+}
 
 const selectCategory = (categoryId) => {
   selectedCategory.value = categoryId
@@ -219,9 +268,48 @@ const selectCategory = (categoryId) => {
   loadPosts()
 }
 
-const handleSearch = () => {
-  currentPage.value = 1
-  loadPosts()
+const handleSearch = async () => {
+  if (!searchKeyword.value.trim()) {
+    // 如果搜索关键词为空，加载普通帖子列表
+    loadPosts()
+    return
+  }
+
+  loading.value = true
+  error.value = ''
+
+  try {
+    const response = await forumAPI.searchPosts({
+      keyword: searchKeyword.value.trim()
+    })
+
+    console.log('=== searchPosts response ===', response)
+
+    const data = response.data
+    if (data && Array.isArray(data)) {
+      postsData.value = data.map(post => ({
+        id: post.postId,
+        title: post.title || '无标题',
+        content: '',
+        author: post.anonymous ? '匿名用户' : (post.authorDisplayName || post.authorUsername || '匿名用户'),
+        date: post.createdAt ? new Date(post.createdAt).toLocaleString() : new Date().toLocaleString(),
+        views: post.viewCount || post.views || 0,
+        replies: post.commentCount || post.replies || 0,
+        categoryId: post.categoryId,
+        isTop: post.isTop === 1 || post.top === true,
+        isEssence: post.isEssence === 1 || post.essence === true,
+        isFavorite: post.favorite === true,
+        tags: []
+      }))
+    } else {
+      postsData.value = []
+    }
+  } catch (err) {
+    error.value = '搜索失败，请重试'
+    console.error('搜索帖子失败:', err)
+  } finally {
+    loading.value = false
+  }
 }
 
 const handleSort = () => {
@@ -229,21 +317,25 @@ const handleSort = () => {
   loadPosts()
 }
 
+const handleFilter = () => {
+  currentPage.value = 1
+  loadPosts()
+}
+
 const toggleFavorite = async (post) => {
   try {
-    if (post.isFavorite) {
-      await forumAPI.removeFavorite({
-        postId: post.id
-      })
-    } else {
-      await forumAPI.addFavorite({
-        postId: post.id
-      })
-    }
+    const response = await forumAPI.favoritePost({
+      postId: post.id
+    })
 
     const postIndex = postsData.value.findIndex(p => p.id === post.id)
     if (postIndex !== -1) {
-      postsData.value[postIndex].isFavorite = !postsData.value[postIndex].isFavorite
+      if (response && response.data) {
+        postsData.value[postIndex].isFavorite = response.data.favorite
+        postsData.value[postIndex].favoriteCount = response.data.favoriteCount
+      } else {
+        postsData.value[postIndex].isFavorite = !postsData.value[postIndex].isFavorite
+      }
     }
   } catch (err) {
     console.error('操作收藏失败:', err)
@@ -258,12 +350,30 @@ const goToPostDetail = (postId) => {
   router.push(`/teacher/forum/post/${postId}`)
 }
 
+const goToPrevPage = async () => {
+  if (currentPage.value > 1) {
+    currentPage.value--
+    await loadPosts()
+  }
+}
+
+const goToNextPage = async () => {
+  if (currentPage.value < totalPages.value) {
+    currentPage.value++
+    await loadPosts()
+  }
+}
+
 const getCategoryName = (categoryId) => {
   const category = categories.value.find(c => c.id === categoryId)
   return category ? category.name : '未知'
 }
 
 onMounted(() => {
+  loadPosts()
+})
+
+onActivated(() => {
   loadPosts()
 })
 </script>
@@ -337,7 +447,7 @@ onMounted(() => {
   align-items: center;
   margin-bottom: 24px;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 16px;
 }
 
 .search-box {
@@ -365,13 +475,25 @@ onMounted(() => {
   cursor: pointer;
 }
 
-.sort-select {
+.sort-select,
+.filter-select {
   padding: 10px 16px;
   border: 1px solid #dee2e6;
   border-radius: 8px;
   font-size: 14px;
   background: white;
   cursor: pointer;
+}
+
+.actions-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.filter-options {
+  display: flex;
+  align-items: center;
 }
 
 .forum-categories {

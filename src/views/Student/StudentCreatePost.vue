@@ -2,7 +2,7 @@
   <div class="page-layout">
     <!-- 栏头 -->
     <StudentHeader />
-    
+
     <div class="content-container">
       <!-- 侧边栏 -->
       <StudentSidebar />
@@ -44,10 +44,10 @@
                     </span>
                   </div>
                   <div class="tag-input-box">
-                    <input 
-                      type="text" 
-                      v-model="tagInput" 
-                      placeholder="输入标签后按回车添加" 
+                    <input
+                      type="text"
+                      v-model="tagInput"
+                      placeholder="输入标签后按回车添加"
                       class="tag-input"
                       @keyup.enter="addTag"
                     />
@@ -67,17 +67,8 @@
                       <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/></svg>
                     </button>
                     <div class="toolbar-divider"></div>
-                    <!-- 字号 -->
-                    <select class="toolbar-select" @change="execCommand('fontSize', $event.target.value); $event.target.value = ''" title="字号">
-                      <option value="">默认字号</option>
-                      <option value="1">小</option>
-                      <option value="2">正常</option>
-                      <option value="3">大</option>
-                      <option value="4">特大</option>
-                      <option value="5">极大</option>
-                    </select>
                     <!-- 字体 -->
-                    <select class="toolbar-select" @change="execCommand('fontName', $event.target.value); $event.target.value = ''" title="字体">
+                    <select v-model="selectedFontName" class="toolbar-select" @change="execCommand('fontName', selectedFontName)" title="字体">
                       <option value="">默认字体</option>
                       <option value="SimSun">宋体</option>
                       <option value="SimHei">黑体</option>
@@ -88,71 +79,36 @@
                     </select>
                     <div class="toolbar-divider"></div>
                     <!-- 格式按钮 -->
-                    <button class="toolbar-btn" @click="execCommand('bold')" title="粗体">
+                    <button class="toolbar-btn" :class="{ active: isFormatActive('bold') }" @click="execCommand('bold')" title="粗体">
                       <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M15.6 10.79c.97-.67 1.65-1.77 1.65-2.79 0-2.26-1.75-4-4-4H7v14h7.04c2.09 0 3.71-1.7 3.71-3.79 0-1.52-.86-2.82-2.15-3.42zM10 6.5h3c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-3v-3zm3.5 9H10v-3h3.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5z"/></svg>
                     </button>
-                    <button class="toolbar-btn" @click="execCommand('italic')" title="斜体">
+                    <button class="toolbar-btn" :class="{ active: isFormatActive('italic') }" @click="execCommand('italic')" title="斜体">
                       <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10 4v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V4z"/></svg>
                     </button>
-                    <button class="toolbar-btn" @click="execCommand('underline')" title="下划线">
+                    <button class="toolbar-btn" :class="{ active: isFormatActive('underline') }" @click="execCommand('underline')" title="下划线">
                       <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 17c3.31 0 6-2.69 6-6V3h-2.5v8c0 1.93-1.57 3.5-3.5 3.5S8.5 12.93 8.5 11V3H6v8c0 3.31 2.69 6 6 6zm-7 2v2h14v-2H5z"/></svg>
                     </button>
-                    <button class="toolbar-btn" @click="execCommand('strikeThrough')" title="删除线">
+                    <button class="toolbar-btn" :class="{ active: isFormatActive('strikeThrough') }" @click="execCommand('strikeThrough')" title="删除线">
                       <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M17.75 9L14 4.5l-1.08 1.09L12.11 4H20c1.1 0 2 .89 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.11.9-2 2-2h2.5l1.79 1.79L9 4.5 5.25 9h12.5zM10 13c0 .55.45 1 1 1h2c.55 0 1-.45 1-1v-1.5c0-.55-.45-1-1-1h-2c-.55 0-1 .45-1 1V13z"/></svg>
                     </button>
                     <div class="toolbar-divider"></div>
                     <!-- 列表 -->
-                    <button class="toolbar-btn" @click="execCommand('insertUnorderedList')" title="无序列表">
+                    <button class="toolbar-btn" :class="{ active: isFormatActive('insertUnorderedList') }" @click="execCommand('insertUnorderedList')" title="无序列表">
                       <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z"/></svg>
                     </button>
-                    <button class="toolbar-btn" @click="execCommand('insertOrderedList')" title="有序列表">
+                    <button class="toolbar-btn" :class="{ active: isFormatActive('insertOrderedList') }" @click="execCommand('insertOrderedList')" title="有序列表">
                       <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M2 17h2v.5H3v1h1v.5H2v1h3v-4H2v1zm1-9h1V4H2v1h1v3zm-1 3h1.8L2 13.1v.9h3v-1H3.2L5 10.9V10H2v1zm5-6v2h14V5H7zm0 14h14v-2H7v2zm0-6h14v-2H7v2z"/></svg>
                     </button>
-                    <div class="toolbar-divider"></div>
-                    <!-- 字体颜色 -->
-                    <div class="toolbar-color-wrapper">
-                      <button class="toolbar-btn" title="字体颜色">
-                        <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
-                      </button>
-                      <input type="color" class="toolbar-color-picker" @change="execCommand('foreColor', $event.target.value)" title="选择字体颜色">
-                    </div>
-                    <!-- 链接 -->
-                    <button class="toolbar-btn" @click="insertLink" title="插入链接">
-                      <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
-                    </button>
-                    <!-- 图片 -->
-                    <button class="toolbar-btn" @click="triggerImageUpload" title="上传图片">
-                      <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
-                    </button>
-                    <input type="file" ref="imageInput" style="display: none" accept="image/*" @change="handleImageUpload">
-                    <!-- 文件 -->
-                    <button class="toolbar-btn" @click="triggerFileUpload" title="上传文件">
-                      <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 2 2h8c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-                    </button>
-                    <input type="file" ref="fileInput" style="display: none" @change="handleFileUpload">
-                    <!-- 公式 -->
-                    <button class="toolbar-btn" @click="insertFormula" title="插入公式">
-                      <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
-                    </button>
-                    <!-- 代码块 -->
-                    <button class="toolbar-btn" @click="insertCodeBlock" title="插入代码块">
-                      <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
-                    </button>
-                    <!-- OCR -->
-                    <button class="toolbar-btn ocr-btn" @click="triggerOCR" title="OCR识别">
-                      <span>OCR</span>
-                    </button>
-                    <input type="file" ref="ocrInput" style="display: none" accept="image/*" @change="handleOCR">
                   </div>
                   <!-- 编辑区域 -->
-                  <div ref="editorContent" class="editor-content" contenteditable="true" @input="updateContent" placeholder="请输入帖子内容"></div>
+                  <div ref="editorContent" class="editor-content" contenteditable="true" @input="updateContent" @selectionchange="updateFormatStates" placeholder="请输入帖子内容"></div>
                 </div>
               </div>
               <!-- 错误提示 -->
               <div v-if="error" class="error-message">
                 {{ error }}
               </div>
-              
+
               <div class="form-actions">
                 <div class="anonymous-option">
                   <label class="checkbox-label">
@@ -177,7 +133,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, reactive, onMounted, onActivated } from 'vue'
 import { useRouter } from 'vue-router'
 import StudentSidebar from '@/components/Student/StudentSidebar.vue'
 import StudentHeader from '@/components/Student/StudentHeader.vue'
@@ -213,6 +169,18 @@ const isAnonymous = ref(false)
 // 标签输入
 const tagInput = ref('')
 
+// 编辑器状态
+const selectedFontSize = ref('')
+const selectedFontName = ref('')
+const formatStates = reactive({
+  bold: false,
+  italic: false,
+  underline: false,
+  strikeThrough: false,
+  insertUnorderedList: false,
+  insertOrderedList: false
+})
+
 // 图片输入引用
 const imageInput = ref(null)
 const ocrInput = ref(null)
@@ -247,6 +215,22 @@ const execCommand = (command, value = null) => {
   if (editorContent.value) {
     editorContent.value.focus()
   }
+  updateFormatStates()
+}
+
+// 检查格式是否激活
+const isFormatActive = (command) => {
+  return formatStates[command] || false
+}
+
+// 更新格式状态
+const updateFormatStates = () => {
+  formatStates.bold = document.queryCommandState('bold')
+  formatStates.italic = document.queryCommandState('italic')
+  formatStates.underline = document.queryCommandState('underline')
+  formatStates.strikeThrough = document.queryCommandState('strikeThrough')
+  formatStates.insertUnorderedList = document.queryCommandState('insertUnorderedList')
+  formatStates.insertOrderedList = document.queryCommandState('insertOrderedList')
 }
 
 // 更新内容
@@ -338,7 +322,7 @@ const handleFileUpload = (event) => {
       name: file.name,
       size: file.size
     })
-    
+
     // 在编辑器中插入文件链接
     const fileLink = `<a href="javascript:void(0)" onclick="window.open('${API_BASE_URL}/student/post/view-file?fileId=${fileId}', '_blank')" style="color: #4a90e2; text-decoration: underline;">📎 ${file.name}</a>`
     execCommand('insertHTML', fileLink)
@@ -352,10 +336,10 @@ const submitNewPost = async () => {
     alert('请填写标题和内容')
     return
   }
-  
+
   loading.value = true
   error.value = ''
-  
+
   try {
     // 创建FormData对象
     const formData = new FormData()
@@ -364,14 +348,14 @@ const submitNewPost = async () => {
     formData.append('categoryId', newPost.value.categoryId)
     formData.append('tags', newPost.value.tags.join(','))
     formData.append('anonymous', isAnonymous.value ? 'true' : 'false')
-    
+
     // 添加文件（实际项目中需要从fileInput中获取文件）
     if (fileInput.value && fileInput.value.files.length > 0) {
       formData.append('file', fileInput.value.files[0])
     }
-    
+
     const response = await forumAPI.createPost(formData)
-    
+
     if (response.code === 200) {
       alert('帖子发布成功！')
       router.push('/student/forum')
@@ -384,10 +368,37 @@ const submitNewPost = async () => {
   }
 }
 
+// 重置表单数据
+const resetForm = () => {
+  newPost.value = {
+    title: '',
+    content: '',
+    categoryId: 'db-basic',
+    tags: []
+  }
+  isAnonymous.value = false
+  tagInput.value = ''
+  selectedFontName.value = ''
+  formatStates.bold = false
+  formatStates.italic = false
+  formatStates.underline = false
+  formatStates.strikeThrough = false
+  formatStates.insertUnorderedList = false
+  formatStates.insertOrderedList = false
+  if (editorContent.value) {
+    editorContent.value.innerHTML = ''
+  }
+}
+
 onMounted(() => {
   if (editorContent.value) {
     editorContent.value.focus()
   }
+})
+
+// 组件激活时重置表单（解决组件复用导致的表单数据残留问题）
+onActivated(() => {
+  resetForm()
 })
 </script>
 
@@ -606,6 +617,12 @@ onMounted(() => {
   height: 16px;
 }
 
+.toolbar-btn.active {
+  background-color: #4a90e2;
+  border-color: #4a90e2;
+  color: white;
+}
+
 .toolbar-divider {
   width: 1px;
   height: 24px;
@@ -762,58 +779,58 @@ onMounted(() => {
     margin-left: 0;
     width: 100%;
   }
-  
+
   .main-content {
     padding: 16px;
   }
-  
+
   .page-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
-  
+
   .back-btn {
     align-self: stretch;
   }
-  
+
   .create-post-form {
     padding: 16px;
   }
-  
+
   .editor-toolbar {
     overflow-x: auto;
     flex-wrap: nowrap;
     padding: 8px;
   }
-  
+
   .toolbar-select {
     font-size: 12px;
     padding: 4px;
   }
-  
+
   .editor-content {
     min-height: 200px;
   }
-  
+
   .tag-input-area {
     min-height: 60px;
   }
-  
+
   .form-actions {
     flex-direction: column;
     gap: 16px;
   }
-  
+
   .anonymous-option {
     order: 2;
   }
-  
+
   .action-buttons {
     width: 100%;
     order: 1;
   }
-  
+
   .btn-secondary,
   .btn-primary {
     flex: 1;

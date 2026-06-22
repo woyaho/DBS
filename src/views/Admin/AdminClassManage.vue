@@ -124,6 +124,15 @@
                   <input type="text" v-model="newClass.displayName" required class="form-input" placeholder="如：2026级-1班" />
                 </div>
                 <div class="form-group">
+                  <label>班主任</label>
+                  <select v-model="newClass.teacherId" class="form-select">
+                    <option value="">请选择班主任</option>
+                    <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id">
+                      {{ teacher.name }} ({{ teacher.username }})
+                    </option>
+                  </select>
+                </div>
+                <div class="form-group">
                   <label>状态</label>
                   <select v-model="newClass.active" class="form-select">
                     <option :value="true">启用</option>
@@ -149,16 +158,25 @@
             <div class="modal-body">
               <form @submit.prevent="updateClass">
                 <div class="form-group">
-                  <label>学年 <span class="required">*</span></label>
-                  <input type="number" v-model="editClass.academicYear" required class="form-input" />
+                  <label>学年</label>
+                  <input type="number" v-model="editClass.academicYear" readonly disabled class="form-input form-input-readonly" />
                 </div>
                 <div class="form-group">
-                  <label>班级代码 <span class="required">*</span></label>
-                  <input type="text" v-model="editClass.classCode" required class="form-input" />
+                  <label>班级代码</label>
+                  <input type="text" v-model="editClass.classCode" readonly disabled class="form-input form-input-readonly" />
                 </div>
                 <div class="form-group">
                   <label>班级名称 <span class="required">*</span></label>
                   <input type="text" v-model="editClass.displayName" required class="form-input" />
+                </div>
+                <div class="form-group">
+                  <label>班主任</label>
+                  <select v-model="editClass.teacherId" class="form-select">
+                    <option value="">请选择班主任</option>
+                    <option v-for="teacher in teachers" :key="teacher.id" :value="teacher.id">
+                      {{ teacher.name }} ({{ teacher.username }})
+                    </option>
+                  </select>
                 </div>
                 <div class="form-group">
                   <label>状态</label>
@@ -178,19 +196,28 @@
 
         <!-- 管理学生模态框 -->
         <div class="modal" v-if="showStudentModal">
-          <div class="modal-content" style="max-width: 800px;">
+          <div class="modal-content" style="max-width: 900px;">
             <div class="modal-header">
-              <h3>管理班级学生 - {{ currentClass.name }}</h3>
+              <h3>管理班级学生 - {{ currentClass.displayName || currentClass.name }}</h3>
               <button class="close-btn" @click="showStudentModal = false">×</button>
             </div>
             <div class="modal-body">
               <div class="student-management">
+                <!-- 搜索框 -->
+                <div class="search-bar">
+                  <input
+                    type="text"
+                    v-model="studentSearchKeyword"
+                    placeholder="搜索学生姓名或学号..."
+                    class="search-input"
+                  />
+                </div>
                 <div class="student-lists">
                   <div class="available-students">
-                    <h4>可用学生</h4>
+                    <h4>可用学生 ({{ filteredAvailableStudents.length }})</h4>
                     <div class="student-list">
                       <div
-                        v-for="student in availableStudents"
+                        v-for="student in filteredAvailableStudents"
                         :key="student.id"
                         class="student-item"
                         @click="addStudentToClass(student)"
@@ -198,19 +225,25 @@
                         <span>{{ student.name }} ({{ student.username }})</span>
                         <button class="add-btn">+</button>
                       </div>
+                      <div v-if="filteredAvailableStudents.length === 0" class="empty-state">
+                        没有匹配的可用学生
+                      </div>
                     </div>
                   </div>
                   <div class="class-students">
-                    <h4>班级学生</h4>
+                    <h4>班级学生 ({{ filteredClassStudents.length }})</h4>
                     <div class="student-list">
                       <div
-                        v-for="student in classStudents"
+                        v-for="student in filteredClassStudents"
                         :key="student.id"
                         class="student-item"
                         @click="removeStudentFromClass(student)"
                       >
                         <span>{{ student.name }} ({{ student.username }})</span>
                         <button class="remove-btn">-</button>
+                      </div>
+                      <div v-if="filteredClassStudents.length === 0" class="empty-state">
+                        该班级暂无学生
                       </div>
                     </div>
                   </div>
@@ -228,7 +261,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import AdminSidebar from '../../components/Admin/AdminSidebar.vue'
 import AdminHeader from '../../components/Admin/AdminHeader.vue'
 import { adminAPI } from '@/services/api.js'
@@ -255,6 +288,7 @@ const newClass = ref({
   academicYear: new Date().getFullYear(),
   classCode: '',
   displayName: '',
+  teacherId: '',
   active: true
 })
 
@@ -263,16 +297,43 @@ const editClass = ref({
   academicYear: new Date().getFullYear(),
   classCode: '',
   displayName: '',
+  teacherId: '',
   active: true
 })
 
 const currentClass = ref({})
 const availableStudents = ref([])
 const classStudents = ref([])
+const studentSearchKeyword = ref('')
+
+// 搜索过滤后的学生列表
+const filteredAvailableStudents = computed(() => {
+  if (!studentSearchKeyword.value) {
+    return availableStudents.value
+  }
+  const keyword = studentSearchKeyword.value.toLowerCase()
+  return availableStudents.value.filter(student => {
+    const name = (student.name || '').toLowerCase()
+    const username = (student.username || '').toLowerCase()
+    return name.includes(keyword) || username.includes(keyword)
+  })
+})
+
+const filteredClassStudents = computed(() => {
+  if (!studentSearchKeyword.value) {
+    return classStudents.value
+  }
+  const keyword = studentSearchKeyword.value.toLowerCase()
+  return classStudents.value.filter(student => {
+    const name = (student.name || '').toLowerCase()
+    const username = (student.username || '').toLowerCase()
+    return name.includes(keyword) || username.includes(keyword)
+  })
+})
 
 // 计算属性
 const teachers = computed(() => {
-  return users.value.filter(user => user.role === 'teacher')
+  return users.value.filter(user => user.role === 'teacher' || user.identity === 'teacher')
 })
 
 const filteredClasses = computed(() => {
@@ -280,8 +341,7 @@ const filteredClasses = computed(() => {
     const matchesSearch = !searchKeyword.value ||
       classItem.displayName.includes(searchKeyword.value) ||
       classItem.classCode.includes(searchKeyword.value)
-    const matchesTeacher = !teacherFilter.value || classItem.teacherId == teacherFilter.value
-    return matchesSearch && matchesTeacher
+    return matchesSearch
   })
 })
 
@@ -291,17 +351,33 @@ const loadClasses = async () => {
   error.value = ''
 
   try {
-    const [classesResponse, usersResponse] = await Promise.all([
-      adminAPI.getTeachingClasses(),
-      adminAPI.getUserList({ role: 'teacher' })
-    ])
-
-    if (classesResponse.data && Array.isArray(classesResponse.data)) {
-      classes.value = classesResponse.data
+    // 获取教师列表
+    const usersResponse = await adminAPI.getUserList({ identity: 'teacher' })
+    if (usersResponse.code === 200 && usersResponse.data && Array.isArray(usersResponse.data)) {
+      users.value = usersResponse.data
     }
 
-    if (usersResponse.data && Array.isArray(usersResponse.data)) {
-      users.value = usersResponse.data
+    // 构建筛选参数
+    const params = {}
+    if (searchKeyword.value) {
+      params.keyword = searchKeyword.value
+    }
+
+    // 如果选择了教师，通过教师姓名筛选
+    if (teacherFilter.value) {
+      const selectedTeacher = users.value.find(t => t.id == teacherFilter.value)
+      if (selectedTeacher) {
+        params.teacherName = selectedTeacher.name || selectedTeacher.username
+      }
+    }
+
+    // 获取所有班级（包括禁用的），在前端显示时区分状态
+    // params.active = true
+
+    // 获取班级列表（支持筛选参数）
+    const classesResponse = await adminAPI.getTeachingClasses(params)
+    if (classesResponse.code === 200 && classesResponse.data && classesResponse.data.teachingClasses && Array.isArray(classesResponse.data.teachingClasses)) {
+      classes.value = classesResponse.data.teachingClasses
     }
   } catch (err) {
     error.value = '加载班级数据失败，请重试'
@@ -329,6 +405,21 @@ const getTeacherName = (classItem) => {
     const teacher = users.value.find(user => user.id === teacherId || user.id == teacherId)
     if (teacher) {
       return teacher.name || teacher.username || '未分配'
+    }
+  }
+
+  // 尝试从teachers数组中获取第一个教师（班主任）
+  if (classItem.teachers && Array.isArray(classItem.teachers) && classItem.teachers.length > 0) {
+    const firstTeacher = classItem.teachers[0]
+    if (firstTeacher.name) {
+      return firstTeacher.name
+    }
+    // 如果teachers数组中只有id，则尝试从users中查找
+    if (firstTeacher.id) {
+      const teacher = users.value.find(user => user.id === firstTeacher.id || user.id == firstTeacher.id)
+      if (teacher) {
+        return teacher.name || teacher.username || '未分配'
+      }
     }
   }
 
@@ -366,6 +457,7 @@ const openAddClassModal = () => {
     academicYear: new Date().getFullYear(),
     classCode: '',
     displayName: '',
+    teacherId: '',
     active: true
   }
   showAddModal.value = true
@@ -377,6 +469,7 @@ const openEditClassModal = (classItem) => {
     academicYear: classItem.academicYear || new Date().getFullYear(),
     classCode: classItem.classCode || '',
     displayName: classItem.displayName || '',
+    teacherId: classItem.teacherId || '',
     active: classItem.active !== undefined ? classItem.active : true
   }
   showEditModal.value = true
@@ -384,8 +477,24 @@ const openEditClassModal = (classItem) => {
 
 const addClass = async () => {
   try {
-    const response = await adminAPI.createTeachingClass(newClass.value)
+    // 创建班级（不包含teacherId，因为API不支持）
+    const classData = {
+      academicYear: newClass.value.academicYear,
+      classCode: newClass.value.classCode,
+      displayName: newClass.value.displayName,
+      active: newClass.value.active
+    }
+    
+    const response = await adminAPI.createTeachingClass(classData)
     if (response.code === 200) {
+      // 如果设置了班主任，需要单独调用分配教师接口
+      if (newClass.value.teacherId) {
+        const teacher = users.value.find(t => t.id == newClass.value.teacherId)
+        if (teacher) {
+          await adminAPI.updateTeacherClasses(teacher.username, [response.data?.id || 1])
+          console.log('[DEBUG] 班主任分配成功:', teacher.username)
+        }
+      }
       showAddModal.value = false
       alert('班级添加成功')
       loadClasses()
@@ -400,8 +509,23 @@ const addClass = async () => {
 
 const updateClass = async () => {
   try {
-    const response = await adminAPI.updateTeachingClass(editClass.value)
+    // 确保active字段是布尔值（select元素会把value转换为字符串）
+    const classData = {
+      id: editClass.value.id,
+      displayName: editClass.value.displayName,
+      active: editClass.value.active === true || editClass.value.active === 'true'
+    }
+
+    const response = await adminAPI.updateTeachingClass(classData)
     if (response.code === 200) {
+      // 如果设置了班主任，需要单独调用分配教师接口
+      if (editClass.value.teacherId) {
+        const teacher = users.value.find(t => t.id == editClass.value.teacherId)
+        if (teacher) {
+          await adminAPI.updateTeacherClasses(teacher.username, [editClass.value.id])
+          console.log('[DEBUG] 班主任更新成功:', teacher.username)
+        }
+      }
       showEditModal.value = false
       alert('班级更新成功')
       loadClasses()
@@ -415,11 +539,39 @@ const updateClass = async () => {
 }
 
 const deleteClass = async (id) => {
+  const classItem = classes.value.find(c => c.id === id)
+  if (!classItem) {
+    alert('班级不存在')
+    return
+  }
+
   if (confirm('确定要删除这个班级吗？')) {
     try {
-      // 实际项目中需要调用删除API
-      classes.value = classes.value.filter(c => c.id !== id)
-      alert('班级删除成功')
+      const response = await adminAPI.deleteTeachingClass(id)
+      console.log('[DEBUG] 删除班级响应:', JSON.stringify(response))
+      if (response.code === 200) {
+        classes.value = classes.value.filter(c => c.id !== id)
+        alert('班级删除成功')
+      } else if (response.code === 400 && response.message.includes('学生绑定')) {
+        // 检查班级是否已经禁用
+        if (classItem.active === false || classItem.active === 'false') {
+          alert('该班级已禁用，但系统检测到仍有学生绑定记录（可能是数据库数据不一致）。\n\n解决方法：\n1. 请联系后端管理员检查数据库数据\n2. 或使用数据库管理工具直接清理相关绑定记录')
+        } else {
+          const result = confirm('该班级仍有学生绑定，无法删除。是否先禁用该班级？')
+          if (result) {
+            classItem.active = false
+            await adminAPI.updateTeachingClass({
+              id: classItem.id,
+              displayName: classItem.displayName,
+              active: false
+            })
+            alert('班级已禁用。如需删除，请先通过"管理学生"功能移除所有学生绑定。')
+            loadClasses()
+          }
+        }
+      } else {
+        alert('班级删除失败: ' + (response.message || '未知错误'))
+      }
     } catch (err) {
       alert('班级删除失败，请重试')
       console.error('删除班级失败:', err)
@@ -432,16 +584,31 @@ const manageStudents = async (classItem) => {
 
   try {
     // 获取所有学生
-    const usersResponse = await adminAPI.getUserList({ role: 'student' })
-    if (usersResponse.data && Array.isArray(usersResponse.data)) {
-      const allStudents = usersResponse.data
-
-      // 模拟班级学生数据
-      availableStudents.value = allStudents.filter(student => Math.random() > 0.5)
-      classStudents.value = allStudents.filter(student => Math.random() > 0.5)
-
-      showStudentModal.value = true
+    const usersResponse = await adminAPI.getUserList({ identity: 'student' })
+    const allStudents = []
+    if (usersResponse.code === 200 && usersResponse.data && Array.isArray(usersResponse.data)) {
+      allStudents.push(...usersResponse.data)
+    } else if (Array.isArray(usersResponse)) {
+      allStudents.push(...usersResponse)
     }
+
+    // 获取班级学生
+    const classStudentsResponse = await adminAPI.getClassStudents(classItem.id)
+    const classStudentIds = new Set()
+    if (classStudentsResponse.data && Array.isArray(classStudentsResponse.data)) {
+      classStudentsResponse.data.forEach(s => {
+        classStudentIds.add(s.id || s.userId)
+      })
+    }
+
+    // 区分可用学生和班级学生
+    availableStudents.value = allStudents.filter(s => !classStudentIds.has(s.id))
+    classStudents.value = allStudents.filter(s => classStudentIds.has(s.id))
+
+    console.log('[DEBUG] 可用学生:', availableStudents.value.length, '人')
+    console.log('[DEBUG] 班级学生:', classStudents.value.length, '人')
+
+    showStudentModal.value = true
   } catch (err) {
     alert('加载学生数据失败，请重试')
     console.error('加载学生数据失败:', err)
@@ -450,7 +617,7 @@ const manageStudents = async (classItem) => {
 
 const addStudentToClass = async (student) => {
   try {
-    await adminAPI.updateStudentClass(student.id, currentClass.value.id)
+    await adminAPI.updateStudentClass(student.username, currentClass.value.id)
     availableStudents.value = availableStudents.value.filter(s => s.id !== student.id)
     classStudents.value.push(student)
     alert('学生添加成功')
@@ -462,7 +629,7 @@ const addStudentToClass = async (student) => {
 
 const removeStudentFromClass = async (student) => {
   try {
-    await adminAPI.updateStudentClass(student.id, null)
+    await adminAPI.updateStudentClass(student.username, null)
     classStudents.value = classStudents.value.filter(s => s.id !== student.id)
     availableStudents.value.push(student)
     alert('学生移除成功')
@@ -471,6 +638,11 @@ const removeStudentFromClass = async (student) => {
     console.error('移除学生失败:', err)
   }
 }
+
+// 监听教师筛选变化
+watch(teacherFilter, () => {
+  loadClasses()
+})
 
 onMounted(() => {
   loadClasses()
@@ -785,6 +957,35 @@ onMounted(() => {
   width: 100%;
 }
 
+.search-bar {
+  margin-bottom: 20px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 16px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: border-color 0.3s;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #4080ff;
+  box-shadow: 0 0 0 2px rgba(64, 128, 255, 0.1);
+}
+
+.student-list .empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 200px;
+  color: #999;
+  font-size: 14px;
+}
+
 .student-lists {
   display: flex;
   gap: 24px;
@@ -812,6 +1013,8 @@ onMounted(() => {
   border-radius: 8px;
   overflow-y: auto;
   background: #f9f9f9;
+  display: flex;
+  flex-direction: column;
 }
 
 .student-item {

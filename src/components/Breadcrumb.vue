@@ -18,16 +18,21 @@ const route = useRoute()
 const breadcrumbs = computed(() => {
   const path = route.path
   const breadcrumbs = []
-  
-  // 根路径处理
-  if (path.startsWith('/student')) {
-    breadcrumbs.push({ title: '学生端', path: '/student/dashboard' })
-  } else if (path.startsWith('/teacher')) {
-    breadcrumbs.push({ title: '教师端', path: '/teacher/dashboard' })
-  } else if (path.startsWith('/admin')) {
-    breadcrumbs.push({ title: '管理端', path: '/admin/dashboard' })
+
+  // 判断是否为智能组卷页面（不显示学生端前缀）
+  const isSmartPaper = path.startsWith('/student/smart-paper')
+
+  // 根路径处理（智能组卷页面不显示端前缀）
+  if (!isSmartPaper) {
+    if (path.startsWith('/student')) {
+      breadcrumbs.push({ title: '学生端', path: '/student/dashboard' })
+    } else if (path.startsWith('/teacher')) {
+      breadcrumbs.push({ title: '教师端', path: '/teacher/dashboard' })
+    } else if (path.startsWith('/admin')) {
+      breadcrumbs.push({ title: '管理端', path: '/admin/dashboard' })
+    }
   }
-  
+
   // 学生端路由
   if (path.startsWith('/student/')) {
     if (path === '/student/dashboard') {
@@ -36,8 +41,6 @@ const breadcrumbs = computed(() => {
       breadcrumbs.push({ title: '作业列表' })
     } else if (path === '/student/submit') {
       breadcrumbs.push({ title: '作业提交' })
-    } else if (path === '/student/grades') {
-      breadcrumbs.push({ title: '成绩查询' })
     } else if (path === '/student/forum') {
       breadcrumbs.push({ title: '论坛' })
     } else if (path === '/student/forum/create') {
@@ -52,9 +55,23 @@ const breadcrumbs = computed(() => {
       breadcrumbs.push({ title: '在线测验' })
     } else if (path === '/student/settings') {
       breadcrumbs.push({ title: '个人设置' })
+    } else if (path.startsWith('/student/smart-paper')) {
+      // 智能组卷相关页面
+      if (path === '/student/smart-paper/list') {
+        breadcrumbs.push({ title: '我的试卷' })
+      } else if (path === '/student/smart-paper/generate') {
+        breadcrumbs.push({ title: '我的试卷', path: '/student/smart-paper/list' })
+        breadcrumbs.push({ title: '生成新试卷' })
+      } else if (path.startsWith('/student/smart-paper/answer/')) {
+        breadcrumbs.push({ title: '我的试卷', path: '/student/smart-paper/list' })
+        breadcrumbs.push({ title: '答题' })
+      } else if (path.startsWith('/student/smart-paper/result/')) {
+        breadcrumbs.push({ title: '我的试卷', path: '/student/smart-paper/list' })
+        breadcrumbs.push({ title: '答题结果' })
+      }
     }
   }
-  
+
   // 教师端路由
   if (path.startsWith('/teacher/')) {
     if (path === '/teacher/dashboard') {
@@ -76,15 +93,13 @@ const breadcrumbs = computed(() => {
       breadcrumbs.push({ title: '备课资源' })
     } else if (path === '/teacher/grades') {
       breadcrumbs.push({ title: '成绩管理' })
-    } else if (path === '/teacher/statistics') {
-      breadcrumbs.push({ title: '统计分析' })
     } else if (path === '/teacher/classes') {
       breadcrumbs.push({ title: '班级选择' })
     } else if (path === '/teacher/settings') {
       breadcrumbs.push({ title: '个人设置' })
     }
   }
-  
+
   // 管理端路由
   if (path.startsWith('/admin/')) {
     if (path === '/admin/dashboard') {
@@ -101,7 +116,7 @@ const breadcrumbs = computed(() => {
       breadcrumbs.push({ title: '作业管理' })
     }
   }
-  
+
   return breadcrumbs
 })
 </script>
@@ -170,11 +185,11 @@ const breadcrumbs = computed(() => {
   .breadcrumb {
     padding: 0 12px;
   }
-  
+
   .breadcrumb-separator {
     margin: 0 8px;
   }
-  
+
   :deep(.el-breadcrumb__inner) {
     font-size: 13px;
   }

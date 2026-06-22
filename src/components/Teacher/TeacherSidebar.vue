@@ -7,7 +7,9 @@
       <li :class="{ active: currentPath === '/teacher/dashboard' }" @click="navigateTo('/teacher/dashboard')"> 首页</li>
       <li :class="{ active: currentPath.startsWith('/teacher/homework') }" @click="navigateTo('/teacher/homework')"> 作业批改</li>
       <li :class="{ active: currentPath === '/teacher/prepare' }" @click="navigateTo('/teacher/prepare')"> 智能备课</li>
-      <li :class="{ active: currentPath === '/teacher/forum' }" @click="navigateTo('/teacher/forum')"> 学习论坛</li>
+      <li :class="{ active: currentPath.startsWith('/teacher/smart-paper') }" @click="navigateTo('/teacher/smart-paper/list')"> 智能组卷</li>
+      <li :class="{ active: currentPath.startsWith('/teacher/forum') }" @click="navigateTo('/teacher/forum')"> 学习论坛</li>
+      <li :class="{ active: currentPath === '/teacher/favorites' }" @click="navigateTo('/teacher/favorites')"> 我的收藏</li>
       <li :class="{ active: currentPath === '/teacher/settings' }" @click="navigateTo('/teacher/settings')"> 设置</li>
     </ul>
   </aside>
@@ -21,8 +23,12 @@ const router = useRouter()
 const route = useRoute()
 const currentPath = computed(() => route.path)
 
-const navigateTo = (path) => {
-  router.push(path)
+const navigateTo = async (path) => {
+  try {
+    await router.push(path)
+  } catch (error) {
+    console.error('路由导航失败:', error)
+  }
 }
 </script>
 

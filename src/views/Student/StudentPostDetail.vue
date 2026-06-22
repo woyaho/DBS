@@ -54,6 +54,9 @@
                   <button class="action-btn" @click="toggleFavorite(post)" :class="{ active: post.isFavorite }">
                     {{ post.isFavorite ? '取消收藏' : '收藏' }}
                   </button>
+                  <button v-if="isPostOwner" class="action-btn delete-btn" @click="confirmDeletePost">
+                    删除帖子
+                  </button>
                 </div>
               </div>
             </div>
@@ -78,11 +81,45 @@
                     <span class="reply-author">{{ reply.author }}</span>
                     <span class="reply-date">{{ reply.date }}</span>
                   </div>
-                  <button class="reply-action-btn" @click="quoteReply(reply)" title="引用回复">
-                    引用
-                  </button>
+                  <div class="reply-actions">
+                    <button class="reply-action-btn" @click="toggleReplyForm(reply)" title="回复此评论">
+                      回复
+                    </button>
+                    <button v-if="isCommentOwner(reply)" class="reply-action-btn delete-btn" @click="confirmDeleteComment(reply)" title="删除评论">
+                      删除
+                    </button>
+                  </div>
                 </div>
                 <div class="reply-content" v-html="reply.content"></div>
+
+                <!-- 二级评论列表 -->
+                <div v-if="reply.childReplies && reply.childReplies.length > 0" class="child-replies">
+                  <div v-for="(child, childIndex) in reply.childReplies" :key="childIndex" class="child-reply">
+                    <div class="author-avatar tiny" :style="{ backgroundColor: getAvatarColor(child.author) }">{{ getAvatarInitial(child.author) }}</div>
+                    <div class="child-reply-content">
+                      <span class="child-reply-author">{{ child.author }}</span>
+                      <span class="child-reply-text" v-html="child.content"></span>
+                      <span class="child-reply-date">{{ child.date }}</span>
+                    </div>
+                    <div class="child-reply-actions">
+                      <button v-if="isCommentOwner(child)" class="child-reply-delete" @click="confirmDeleteComment(child)" title="删除评论">
+                        删除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 回复表单 -->
+                <div v-if="reply.showReplyForm" class="child-reply-form">
+                  <input
+                    v-model="reply.replyText"
+                    type="text"
+                    class="child-reply-input"
+                    placeholder="写下你的回复..."
+                    @keyup.enter="submitChildReply(reply)"
+                  />
+                  <button class="btn-primary small" @click="submitChildReply(reply)">发送</button>
+                </div>
               </div>
             </div>
 
@@ -100,17 +137,8 @@
                     <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.9 16c1.05-3.19 4.05-5.5 7.6-5.5 1.95 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"/></svg>
                   </button>
                   <div class="toolbar-divider"></div>
-                  <!-- 字号 -->
-                  <select class="toolbar-select" @change="execCommand('fontSize', $event.target.value); $event.target.value = ''" title="字号">
-                    <option value="">默认字号</option>
-                    <option value="1">小</option>
-                    <option value="2">正常</option>
-                    <option value="3">大</option>
-                    <option value="4">特大</option>
-                    <option value="5">极大</option>
-                  </select>
                   <!-- 字体 -->
-                  <select class="toolbar-select" @change="execCommand('fontName', $event.target.value); $event.target.value = ''" title="字体">
+                  <select v-model="replyFontName" class="toolbar-select" @change="execCommand('fontName', replyFontName)" title="字体">
                     <option value="">默认字体</option>
                     <option value="SimSun">宋体</option>
                     <option value="SimHei">黑体</option>
@@ -121,59 +149,30 @@
                   </select>
                   <div class="toolbar-divider"></div>
                   <!-- 格式按钮 -->
-                  <button class="toolbar-btn" @click="execCommand('bold')" title="粗体">
+                  <button class="toolbar-btn" :class="{ active: replyFormatStates.bold }" @click="execCommand('bold')" title="粗体">
                     <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M15.6 10.79c.97-.67 1.65-1.77 1.65-2.79 0-2.26-1.75-4-4-4H7v14h7.04c2.09 0 3.71-1.7 3.71-3.79 0-1.52-.86-2.82-2.15-3.42zM10 6.5h3c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5h-3v-3zm3.5 9H10v-3h3.5c.83 0 1.5.67 1.5 1.5s-.67 1.5-1.5 1.5z"/></svg>
                   </button>
-                  <button class="toolbar-btn" @click="execCommand('italic')" title="斜体">
+                  <button class="toolbar-btn" :class="{ active: replyFormatStates.italic }" @click="execCommand('italic')" title="斜体">
                     <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M10 4v3h2.21l-3.42 8H6v3h8v-3h-2.21l3.42-8H18V4z"/></svg>
                   </button>
-                  <button class="toolbar-btn" @click="execCommand('underline')" title="下划线">
+                  <button class="toolbar-btn" :class="{ active: replyFormatStates.underline }" @click="execCommand('underline')" title="下划线">
                     <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 17c3.31 0 6-2.69 6-6V3h-2.5v8c0 1.93-1.57 3.5-3.5 3.5S8.5 12.93 8.5 11V3H6v8c0 3.31 2.69 6 6 6zm-7 2v2h14v-2H5z"/></svg>
                   </button>
-                  <button class="toolbar-btn" @click="execCommand('strikeThrough')" title="删除线">
+                  <button class="toolbar-btn" :class="{ active: replyFormatStates.strikeThrough }" @click="execCommand('strikeThrough')" title="删除线">
                     <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M17.75 9L14 4.5l-1.08 1.09L12.11 4H20c1.1 0 2 .89 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.11.9-2 2-2h2.5l1.79 1.79L9 4.5 5.25 9h12.5zM10 13c0 .55.45 1 1 1h2c.55 0 1-.45 1-1v-1.5c0-.55-.45-1-1-1h-2c-.55 0-1 .45-1 1V13z"/></svg>
                   </button>
                   <div class="toolbar-divider"></div>
                   <!-- 列表 -->
-                  <button class="toolbar-btn" @click="execCommand('insertUnorderedList')" title="无序列表">
+                  <button class="toolbar-btn" :class="{ active: replyFormatStates.insertUnorderedList }" @click="execCommand('insertUnorderedList')" title="无序列表">
                     <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M4 10.5c-.83 0-1.5.67-1.5 1.5s.67 1.5 1.5 1.5 1.5-.67 1.5-1.5-.67-1.5-1.5-1.5zm0-6c-.83 0-1.5.67-1.5 1.5S3.17 7.5 4 7.5 5.5 6.83 5.5 6 4.83 4.5 4 4.5zm0 12c-.83 0-1.5.68-1.5 1.5s.68 1.5 1.5 1.5 1.5-.68 1.5-1.5-.67-1.5-1.5-1.5zM7 19h14v-2H7v2zm0-6h14v-2H7v2zm0-8v2h14V5H7z"/></svg>
                   </button>
-                  <button class="toolbar-btn" @click="execCommand('insertOrderedList')" title="有序列表">
+                  <button class="toolbar-btn" :class="{ active: replyFormatStates.insertOrderedList }" @click="execCommand('insertOrderedList')" title="有序列表">
                     <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M2 17h2v.5H3v1h1v.5H2v1h3v-4H2v1zm1-9h1V4H2v1h1v3zm-1 3h1.8L2 13.1v.9h3v-1H3.2L5 10.9V10H2v1zm5-6v2h14V5H7zm0 14h14v-2H7v2zm0-6h14v-2H7v2z"/></svg>
                   </button>
                   <div class="toolbar-divider"></div>
-                  <!-- 字体颜色 -->
-                  <div class="toolbar-color-wrapper">
-                    <button class="toolbar-btn" title="字体颜色">
-                      <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.26-.38-.61-.38-.99 0-.83.67-1.5 1.5-1.5H16c2.76 0 5-2.24 5-5 0-4.42-4.03-8-9-8zm-5.5 9c-.83 0-1.5-.67-1.5-1.5S5.67 9 6.5 9 8 9.67 8 10.5 7.33 12 6.5 12zm3-4C8.67 8 8 7.33 8 6.5S8.67 5 9.5 5s1.5.67 1.5 1.5S10.33 8 9.5 8zm5 0c-.83 0-1.5-.67-1.5-1.5S13.67 5 14.5 5s1.5.67 1.5 1.5S15.33 8 14.5 8zm3 4c-.83 0-1.5-.67-1.5-1.5S16.67 9 17.5 9s1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
-                    </button>
-                    <input type="color" class="toolbar-color-picker" @change="execCommand('foreColor', $event.target.value)" title="选择字体颜色">
-                  </div>
-                  <!-- 链接 -->
-                  <button class="toolbar-btn" @click="insertLink" title="插入链接">
-                    <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/></svg>
-                  </button>
-                  <!-- 图片 -->
-                  <button class="toolbar-btn" @click="triggerImageUpload" title="上传图片">
-                    <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
-                  </button>
-                  <input type="file" ref="imageInput" style="display: none" accept="image/*" @change="handleImageUpload">
-                  <!-- 公式 -->
-                  <button class="toolbar-btn" @click="insertFormula" title="插入公式">
-                    <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M7 2v11h3v9l7-12h-4l4-8z"/></svg>
-                  </button>
-                  <!-- 代码块 -->
-                  <button class="toolbar-btn" @click="insertCodeBlock" title="插入代码块">
-                    <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z"/></svg>
-                  </button>
-                  <!-- OCR -->
-                  <button class="toolbar-btn ocr-btn" @click="triggerOCR" title="OCR识别">
-                    <span>OCR</span>
-                  </button>
-                  <input type="file" ref="ocrInput" style="display: none" accept="image/*" @change="handleOCR">
                 </div>
                 <!-- 编辑区域 -->
-                <div ref="replyEditor" class="editor-content" contenteditable="true" @input="updateReplyContent" placeholder="写下你的回复..."></div>
+                <div ref="replyEditor" class="editor-content" contenteditable="true" @input="updateReplyContent" @selectionchange="updateReplyFormatStates" placeholder="写下你的回复..."></div>
               </div>
               <!-- 回复错误提示 -->
               <div v-if="replyError" class="error-message">
@@ -200,7 +199,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onActivated, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import StudentSidebar from '@/components/Student/StudentSidebar.vue'
 import StudentHeader from '@/components/Student/StudentHeader.vue'
@@ -220,10 +219,46 @@ const error = ref('')
 const replyLoading = ref(false)
 const replyError = ref('')
 
-// 图片输入引用
-const imageInput = ref(null)
-const ocrInput = ref(null)
 const replyEditor = ref(null)
+
+// 回复编辑器状态
+const replyFontSize = ref('')
+const replyFontName = ref('')
+const replyFormatStates = reactive({
+  bold: false,
+  italic: false,
+  underline: false,
+  strikeThrough: false,
+  insertUnorderedList: false,
+  insertOrderedList: false
+})
+
+// 当前登录用户
+const currentUser = ref(null)
+try {
+  const userStr = localStorage.getItem('user')
+  if (userStr) {
+    currentUser.value = JSON.parse(userStr)
+  }
+} catch (e) {
+  console.error('解析用户信息失败:', e)
+}
+
+// 判断是否是帖子作者
+const isPostOwner = computed(() => {
+  if (!post.value || !currentUser.value) return false
+  const author = post.value.author
+  return author === currentUser.value.username ||
+         author === currentUser.value.name
+})
+
+// 判断是否是评论作者
+const isCommentOwner = (comment) => {
+  if (!comment || !currentUser.value) return false
+  const author = comment.author
+  return author === currentUser.value.username ||
+         author === currentUser.value.name
+}
 
 // 分类数据
 const categories = ref([
@@ -255,27 +290,34 @@ const getCategoryName = (categoryId) => {
   return category ? category.name : '未知'
 }
 
+// HTML实体解码函数
+const decodeHtml = (html) => {
+  if (!html) return ''
+  const textArea = document.createElement('textarea')
+  textArea.innerHTML = html
+  return textArea.value
+}
+
 // 加载帖子详情
 const loadPostDetail = async () => {
   loading.value = true
   error.value = ''
-  
+
   try {
     const response = await forumAPI.getPostDetail({
       postId: postId.value
     })
-    
+
     console.log('=== post detail response ===', response)
     console.log('=== response.data ===', response?.data)
-    console.log('=== response.data.data ===', response?.data?.data)
-    
-    if (response.data && response.data.data) {
-      const postData = response.data.data
+
+    if (response.data && response.data.postId) {
+      const postData = response.data
       post.value = {
         id: postData.postId,
         title: postData.title || '无标题',
-        content: postData.content || postData.body || postData.text || '',
-        author: postData.authorName || postData.author || '匿名用户',
+        content: decodeHtml(postData.content || postData.body || postData.text || ''),
+        author: postData.authorDisplayName || postData.authorUsername || '匿名用户',
         date: postData.createTime ? new Date(postData.createTime).toLocaleString() : new Date().toLocaleString(),
         views: postData.viewCount || postData.views || 0,
         replies: postData.commentCount || postData.replies || 0,
@@ -283,10 +325,11 @@ const loadPostDetail = async () => {
         tags: postData.tags ? postData.tags.split(',') : [],
         isTop: postData.isTop === 1,
         isEssence: postData.isEssence === 1,
-        isFavorite: false,
+        isFavorite: postData.favorite === true,
+        favoriteCount: postData.favoriteCount || 0,
         replyList: []
       }
-      
+
       // 加载评论
       await loadComments()
     }
@@ -301,20 +344,26 @@ const loadPostDetail = async () => {
 // 加载评论
 const loadComments = async () => {
   if (!post.value) return
-  
+
   try {
-    const response = await forumAPI.getComments({
-      postId: post.value.id,
-      page: 1,
-      pageSize: 50
+    const response = await forumAPI.getPostComments({
+      postId: post.value.id
     })
-    
-    if (response.data && response.data.data) {
-      post.value.replyList = response.data.data.map(comment => ({
+
+    if (response.data && Array.isArray(response.data)) {
+      post.value.replyList = response.data.map(comment => ({
         id: comment.commentId,
-        author: comment.authorName,
-        date: new Date(comment.createTime).toLocaleString(),
-        content: comment.content
+        author: comment.authorDisplayName || comment.authorUsername || '匿名用户',
+        date: comment.createdAt ? new Date(comment.createdAt).toLocaleString() : new Date().toLocaleString(),
+        content: decodeHtml(comment.content),
+        showReplyForm: false,
+        replyText: '',
+        childReplies: comment.replies ? comment.replies.map(child => ({
+          id: child.commentId,
+          author: child.authorDisplayName || child.authorUsername || '匿名用户',
+          date: child.createdAt ? new Date(child.createdAt).toLocaleString() : new Date().toLocaleString(),
+          content: decodeHtml(child.content)
+        })) : []
       }))
     }
   } catch (err) {
@@ -322,8 +371,83 @@ const loadComments = async () => {
   }
 }
 
+// 切换二级回复表单显示
+const toggleReplyForm = (reply) => {
+  reply.showReplyForm = !reply.showReplyForm
+}
+
+// 提交二级回复
+const submitChildReply = async (reply) => {
+  if (!reply.replyText.trim()) {
+    alert('请输入回复内容')
+    return
+  }
+
+  try {
+    await forumAPI.replyComment({
+      postId: post.value.id,
+      parentCommentId: reply.id,
+      content: reply.replyText.trim(),
+      isAnonymous: isAnonymous.value ? 1 : 0
+    })
+
+    // 重新加载评论
+    await loadComments()
+  } catch (err) {
+    console.error('发布回复失败:', err)
+    alert('发布回复失败，请重试')
+  }
+}
+
+// 确认删除帖子
+const confirmDeletePost = () => {
+  if (confirm('确定要删除这篇帖子吗？此操作不可撤销。')) {
+    deletePost()
+  }
+}
+
+// 删除帖子
+const deletePost = async () => {
+  try {
+    await forumAPI.deletePost({
+      postId: post.value.id
+    })
+    alert('帖子删除成功')
+    router.push('/student/forum')
+  } catch (err) {
+    console.error('删除帖子失败:', err)
+    alert('删除帖子失败，请重试')
+  }
+}
+
+// 确认删除评论
+const confirmDeleteComment = (comment) => {
+  if (confirm('确定要删除这条评论吗？此操作不可撤销。')) {
+    deleteComment(comment)
+  }
+}
+
+// 删除评论
+const deleteComment = async (comment) => {
+  try {
+    await forumAPI.deleteComment({
+      commentId: comment.id
+    })
+    // 重新加载评论
+    await loadComments()
+  } catch (err) {
+    console.error('删除评论失败:', err)
+    alert('删除评论失败，请重试')
+  }
+}
+
 // 初始化数据
 onMounted(() => {
+  loadPostDetail()
+})
+
+// 路由参数变化时重新加载数据（组件复用时触发）
+onActivated(() => {
   loadPostDetail()
 })
 
@@ -335,30 +459,31 @@ const goBack = () => {
 // 切换收藏状态
 const toggleFavorite = async (post) => {
   try {
-    if (post.isFavorite) {
-      await forumAPI.removeFavorite({
-        postId: post.id
-      })
+    const response = await forumAPI.favoritePost({
+      postId: post.id
+    })
+
+    if (response && response.data) {
+      post.isFavorite = response.data.favorite
+      post.favoriteCount = response.data.favoriteCount
     } else {
-      await forumAPI.addFavorite({
-        postId: post.id
-      })
+      post.isFavorite = !post.isFavorite
     }
-    
-    post.isFavorite = !post.isFavorite
   } catch (err) {
     console.error('操作收藏失败:', err)
   }
 }
 
-// 引用回复
-const quoteReply = (reply) => {
-  const quoteHtml = `<blockquote contenteditable="false" style="border-left: 3px solid #4a90e2; padding-left: 12px; margin: 8px 0; color: #666; background: #f8f9fa; padding: 12px; border-radius: 4px;"><strong>${reply.author}</strong> ${reply.date}:<br>${reply.content}</blockquote><p><br></p>`
-  if (replyEditor.value) {
-    replyEditor.value.innerHTML += quoteHtml
-    newReply.value = replyEditor.value.innerHTML
-    replyEditor.value.focus()
-  }
+
+
+// 更新回复格式状态
+const updateReplyFormatStates = () => {
+  replyFormatStates.bold = document.queryCommandState('bold')
+  replyFormatStates.italic = document.queryCommandState('italic')
+  replyFormatStates.underline = document.queryCommandState('underline')
+  replyFormatStates.strikeThrough = document.queryCommandState('strikeThrough')
+  replyFormatStates.insertUnorderedList = document.queryCommandState('insertUnorderedList')
+  replyFormatStates.insertOrderedList = document.queryCommandState('insertOrderedList')
 }
 
 // 富文本编辑器命令
@@ -367,6 +492,7 @@ const execCommand = (command, value = null) => {
   if (replyEditor.value) {
     replyEditor.value.focus()
   }
+  updateReplyFormatStates()
 }
 
 // 更新回复内容
@@ -376,89 +502,55 @@ const updateReplyContent = () => {
   }
 }
 
-// 插入链接
-const insertLink = () => {
-  const url = prompt('请输入链接地址：', 'http://')
-  if (url) {
-    execCommand('createLink', url)
-  }
-}
-
-// 插入公式
-const insertFormula = () => {
-  const formula = prompt('请输入公式（LaTeX格式）：', '')
-  if (formula) {
-    const html = `<span class="formula" style="background: #f5f5f5; padding: 2px 6px; border-radius: 4px; font-family: 'Courier New', monospace;">$${formula}$</span>&nbsp;`
-    execCommand('insertHTML', html)
-  }
-}
-
-// 插入代码块
-const insertCodeBlock = () => {
-  const code = prompt('请输入代码：', '')
-  if (code) {
-    const html = `<pre style="background: #f5f5f5; padding: 12px; border-radius: 4px; overflow-x: auto; font-family: 'Courier New', monospace; font-size: 13px;"><code>${code.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code></pre><p><br></p>`
-    execCommand('insertHTML', html)
-  }
-}
-
-// 触发图片上传
-const triggerImageUpload = () => {
-  if (imageInput.value) {
-    imageInput.value.click()
-  }
-}
-
-// 处理图片上传
-const handleImageUpload = (event) => {
-  const file = event.target.files[0]
-  if (file) {
-    const imageUrl = URL.createObjectURL(file)
-    const html = `<img src="${imageUrl}" style="max-width: 100%; border-radius: 4px; margin: 8px 0;" /><p><br></p>`
-    execCommand('insertHTML', html)
-    event.target.value = ''
-  }
-}
-
-// 触发OCR
-const triggerOCR = () => {
-  if (ocrInput.value) {
-    ocrInput.value.click()
-  }
-}
-
-// 处理OCR（模拟）
-const handleOCR = (event) => {
-  const file = event.target.files[0]
-  if (file) {
-    setTimeout(() => {
-      const ocrText = '这是OCR识别的文本内容（模拟）...'
-      execCommand('insertText', ocrText)
-    }, 500)
-    event.target.value = ''
-  }
-}
-
 // 提交回复
+// 清理富文本编辑器生成的多余HTML标签，但保留格式标签和img标签
+const cleanHtmlContent = (html) => {
+  if (!html) return ''
+
+  // 临时保存img标签
+  const imgTags = []
+  let cleaned = html
+    // 保存img标签到数组并替换为占位符
+    .replace(/<img[^>]+src="data:image[^"]+"[^>]*>/gi, (match) => {
+      const index = imgTags.push(match) - 1
+      return `[[IMG_PLACEHOLDER_${index}]]`
+    })
+    // 移除空的div标签
+    .replace(/<div[^>]*><\/div>/gi, '')
+    // 移除blockquote标签（引用回复的样式标签）
+    .replace(/<blockquote[^>]*>/gi, '')
+    .replace(/<\/blockquote>/gi, '\n')
+    // 恢复img标签
+    .replace(/\[\[IMG_PLACEHOLDER_(\d+)\]\]/gi, (match, index) => {
+      return imgTags[index] || ''
+    })
+    // 移除多余的空白字符
+    .trim()
+
+  return cleaned
+}
+
 const submitReply = async () => {
   if (!newReply.value) {
     alert('请输入回复内容')
     return
   }
-  
+
   replyLoading.value = true
   replyError.value = ''
-  
+
   try {
-    await forumAPI.addComment({
+    const cleanContent = cleanHtmlContent(newReply.value)
+
+    await forumAPI.commentPost({
       postId: post.value.id,
-      content: newReply.value,
+      content: cleanContent,
       isAnonymous: isAnonymous.value ? 1 : 0
     })
-    
+
     // 重新加载评论
     await loadComments()
-    
+
     // 清空编辑器
     newReply.value = ''
     if (replyEditor.value) {
@@ -898,6 +990,95 @@ const submitReply = async () => {
   margin: 0;
 }
 
+/* 二级评论 */
+.child-replies {
+  margin-top: 12px;
+  padding-left: 44px;
+}
+
+.child-reply {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid #e9ecef;
+}
+
+.child-reply:first-child {
+  border-top: none;
+}
+
+.author-avatar.tiny {
+  width: 24px;
+  height: 24px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.child-reply-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.child-reply-author {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a2a3a;
+}
+
+.child-reply-date {
+  font-size: 12px;
+  color: #6c757d;
+}
+
+.child-reply-text {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #555;
+}
+
+.child-reply-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  padding-left: 44px;
+}
+
+.child-reply-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.child-reply-input:focus {
+  outline: none;
+  border-color: #4a90e2;
+}
+
+.child-reply-actions {
+  display: flex;
+  align-items: center;
+}
+
+.child-reply-delete {
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #dc3545;
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.child-reply-delete:hover {
+  background-color: #f8d7da;
+}
+
 /* 回复表单 */
 .reply-form {
   margin-top: 32px;
@@ -1038,86 +1219,86 @@ const submitReply = async () => {
     margin-left: 0;
     width: 100%;
   }
-  
+
   .main-content {
     padding: 16px;
   }
-  
+
   .page-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
-  
+
   .back-btn {
     align-self: stretch;
   }
-  
+
   .post-header {
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   .post-title-area {
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   .author-avatar {
     align-self: flex-start;
   }
-  
+
   .post-header-actions {
     width: 100%;
     justify-content: space-between;
   }
-  
+
   .post-actions {
     width: 100%;
     justify-content: space-between;
   }
-  
+
   .action-btn {
     flex: 1;
     text-align: center;
   }
-  
+
   .post-meta {
     flex-wrap: wrap;
   }
-  
+
   .post-tags {
     width: 100%;
   }
-  
+
   .reply-header {
     flex-wrap: wrap;
   }
-  
+
   .reply-action-btn {
     margin-left: auto;
   }
-  
+
   .form-actions {
     flex-direction: column;
     gap: 16px;
   }
-  
+
   .anonymous-option {
     order: 2;
   }
-  
+
   .editor-toolbar {
     overflow-x: auto;
     flex-wrap: nowrap;
     padding: 8px;
   }
-  
+
   .toolbar-select {
     font-size: 12px;
     padding: 4px;
   }
-  
+
   .editor-content {
     min-height: 120px;
   }

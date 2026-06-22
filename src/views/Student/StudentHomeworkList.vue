@@ -2,7 +2,7 @@
   <div class="page-layout">
     <!-- 栏头 -->
     <StudentHeader />
-    
+
     <div class="content-container">
       <!-- 侧边栏 -->
       <StudentSidebar />
@@ -52,7 +52,7 @@
                   <button class="btn btn-primary">查看详情</button>
                 </div>
               </div>
-              
+
               <!-- 空状态 -->
               <div v-if="homeworkList.length === 0" class="empty-state">
                 <div class="empty-icon">📭</div>
@@ -81,42 +81,39 @@ const loading = ref(false)
 
 // 加载作业列表
 const loadHomeworkList = async () => {
+  console.log('=== loadHomeworkList 开始 ===')
   loading.value = true
   try {
+    console.log('=== 调用 studentAPI.getAssignmentList() ===')
     const response = await studentAPI.getAssignmentList()
-    if (response.code === 200) {
-      // 获取每个作业的状态和成绩
-      const homeworkWithStatus = await Promise.all(
-        response.data.map(async (item) => {
-          try {
-            const statusResponse = await studentAPI.getAssignmentStatus(item.assignmentId)
-            return {
-              ...item,
-              submitted: statusResponse.data.submitted,
-              score: statusResponse.data.finalScore,
-              completed: statusResponse.data.completed,
-              published: statusResponse.data.published,
-              description: item.description || '点击查看详情'
-            }
-          } catch (error) {
-            // 如果获取状态失败，返回基础信息
-            return {
-              ...item,
-              submitted: item.submitted,
-              score: undefined,
-              description: '点击查看详情'
-            }
-          }
-        })
-      )
-      homeworkList.value = homeworkWithStatus
+
+    console.log('=== 响应结果 ===', response)
+    console.log('=== response.code ===', response?.code)
+    console.log('=== response.data ===', response?.data)
+    console.log('=== Array.isArray(response?.data) ===', Array.isArray(response?.data))
+
+    if (response.code === 200 && response.data) {
+      if (Array.isArray(response.data)) {
+        homeworkList.value = response.data.map(item => ({
+          ...item,
+          description: item.description || '点击查看详情'
+        }))
+        console.log('=== 作业列表解析成功，共', homeworkList.value.length, '条 ===')
+      } else {
+        console.error('=== response.data 不是数组 ===')
+        homeworkList.value = []
+      }
+    } else {
+      console.error('=== 响应失败或数据为空 ===')
+      homeworkList.value = []
     }
   } catch (error) {
     console.error('加载作业列表失败:', error)
-    // 不显示错误弹窗，保持homeworkList为空，显示空状态
+    console.error('错误堆栈:', error.stack)
     homeworkList.value = []
   } finally {
     loading.value = false
+    console.log('=== loadHomeworkList 结束 ===')
   }
 }
 
@@ -147,15 +144,9 @@ const getStatusText = (homework) => {
     return '已截止'
   }
   if (homework.submitted) {
-    if (homework.published && homework.score !== undefined) {
-      return '已批改'
-    } else if (homework.completed) {
-      return '批改中'
-    } else {
-      return '未被批改'
-    }
+    return '已提交'
   }
-  return '进行中'
+  return '未提交'
 }
 
 // 获取状态样式类
@@ -164,13 +155,7 @@ const getStatusClass = (homework) => {
     return 'expired'
   }
   if (homework.submitted) {
-    if (homework.published && homework.score !== undefined) {
-      return 'graded'
-    } else if (homework.completed) {
-      return 'grading'
-    } else {
-      return 'submitted'
-    }
+    return 'submitted'
   }
   return 'ongoing'
 }

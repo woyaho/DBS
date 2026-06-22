@@ -80,6 +80,7 @@
 import { ref, computed, onMounted } from 'vue'
 import TeacherSidebar from '@/components/Teacher/TeacherSidebar.vue'
 import TeacherHeader from '@/components/Teacher/TeacherHeader.vue'
+import { authAPI } from '@/services/api.js'
 
 // 用户信息
 const userInfo = ref({

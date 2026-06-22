@@ -34,8 +34,8 @@
 
             <!-- 课件列表 -->
             <div class="courseware-grid">
-              <div v-for="(courseware, index) in coursewareList" :key="index" class="courseware-card">
-                <div class="courseware-icon">📄</div>
+              <div v-for="(courseware, index) in coursewareList" :key="courseware.id" class="courseware-card">
+                <div class="courseware-icon" @click="previewCourseware(courseware.id)">📄</div>
                 <div class="courseware-info">
                   <h3 class="courseware-title">{{ courseware.title }}</h3>
                   <div class="courseware-meta">
@@ -44,110 +44,15 @@
                     <span class="meta-item">{{ courseware.words }}</span>
                   </div>
                 </div>
-                <button class="download-btn">下载</button>
+                <div class="courseware-actions">
+                  <button class="action-btn preview-btn" @click="previewCourseware(courseware.id)">预览</button>
+                  <button class="action-btn download-btn" @click="downloadCourseware(courseware.id)">下载</button>
+                  <button class="action-btn delete-btn" @click="deleteCoursewareItem(courseware.id)">删除</button>
+                </div>
               </div>
             </div>
           </div>
 
-          <!-- 智能组卷 -->
-          <div class="exam-section">
-            <div class="section-header">
-              <h2 class="section-title">智能组卷</h2>
-            </div>
-
-            <div class="exam-config">
-              <!-- 章节选择 -->
-              <div class="config-group">
-                <h3 class="config-title">章节选择</h3>
-                <div class="chapter-list">
-                  <label v-for="chapter in chapters" :key="chapter.id" class="chapter-item">
-                    <input type="checkbox" :id="'chapter-' + chapter.id" :checked="chapter.checked" @change="toggleChapter(chapter.id)" />
-                    <span class="chapter-name">{{ chapter.name }}</span>
-                  </label>
-                </div>
-              </div>
-
-              <!-- 难度和题量选择 -->
-              <div class="slider-container">
-                <!-- 难度选择 -->
-                <div class="slider-group">
-                  <h3 class="config-title">难度选择</h3>
-                  <div class="slider-wrapper">
-                    <div class="slider-track">
-                      <input
-                        type="range"
-                        min="1"
-                        max="5"
-                        v-model="difficulty"
-                        class="difficulty-slider"
-                      />
-                      <div class="slider-markers">
-                        <span class="marker">极易</span>
-                        <span class="marker">偏易</span>
-                        <span class="marker">正常</span>
-                        <span class="marker">偏难</span>
-                        <span class="marker">极难</span>
-                      </div>
-                    </div>
-                    <div class="slider-value">{{ getDifficultyText(difficulty) }}</div>
-                  </div>
-                </div>
-
-                <!-- 题量选择 -->
-                <div class="slider-group">
-                  <h3 class="config-title">题量选择</h3>
-                  <div class="slider-wrapper">
-                    <div class="slider-track">
-                      <input
-                        type="range"
-                        min="10"
-                        max="50"
-                        step="10"
-                        v-model="questionCount"
-                        class="question-slider"
-                      />
-                      <div class="slider-markers">
-                        <span class="marker">10题</span>
-                        <span class="marker">20题</span>
-                        <span class="marker">30题</span>
-                        <span class="marker">40题</span>
-                        <span class="marker">50题</span>
-                      </div>
-                    </div>
-                    <div class="slider-value">{{ questionCount }}题</div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 个性化要求 -->
-              <div class="config-group">
-                <h3 class="config-title">个性化要求</h3>
-                <div class="textarea-container">
-                  <textarea v-model="customRequirements" class="requirements-textarea" placeholder="输入要求..."></textarea>
-                </div>
-              </div>
-
-              <!-- 生成组卷按钮 -->
-                <div class="generate-section">
-                  <div class="ai-assist-section">
-                    <h3 class="config-title">AI辅助组卷</h3>
-                    <div class="ai-assist-buttons">
-                      <button class="ai-btn" @click="generateAIExam" :disabled="generatingAIExam">
-                        {{ generatingAIExam ? 'AI生成中...' : 'AI智能组卷' }}
-                      </button>
-                      <button class="ai-btn" @click="analyzeRequirements" :disabled="analyzingRequirements">
-                        {{ analyzingRequirements ? '分析中...' : '分析需求' }}
-                      </button>
-                    </div>
-                    <div v-if="aiAnalysisResult" class="ai-analysis-result">
-                      <h4>AI分析结果：</h4>
-                      <p>{{ aiAnalysisResult }}</p>
-                    </div>
-                  </div>
-                  <button class="generate-btn" @click="generateExam">生成组卷</button>
-                </div>
-            </div>
-          </div>
         </div>
       </main>
     </div>
@@ -155,7 +60,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import TeacherSidebar from '@/components/Teacher/TeacherSidebar.vue'
 import TeacherHeader from '@/components/Teacher/TeacherHeader.vue'
 import { teacherAPI } from '@/services/api.js'
@@ -167,39 +72,9 @@ const fileInput = ref(null)
 const uploading = ref(false)
 
 // 课件列表
-const coursewareList = ref([
-  { title: '课件一', type: 'PDF', size: '24KB', words: '约0.2万字' },
-  { title: '课件二', type: 'PDF', size: '24KB', words: '约0.2万字' },
-  { title: '课件三', type: 'PDF', size: '24KB', words: '约0.2万字' },
-  { title: '课件四', type: 'PDF', size: '24KB', words: '约0.2万字' },
-  { title: '课件五', type: 'PDF', size: '24KB', words: '约0.2万字' },
-  { title: '课件六', type: 'PDF', size: '24KB', words: '约0.2万字' }
-])
+const coursewareList = ref([])
 
-// 章节列表
-const chapters = ref([
-  { id: 1, name: '数据库系统概述', checked: true },
-  { id: 2, name: '数据模型与关系数据库', checked: false },
-  { id: 3, name: 'SQL语言', checked: false },
-  { id: 4, name: '数据库规范化', checked: false },
-  { id: 5, name: '事务与并发控制', checked: false },
-  { id: 6, name: '数据库安全与备份', checked: false },
-  { id: 7, name: '数据库设计', checked: false }
-])
 
-// 难度选择 (1-5: 极易到极难)
-const difficulty = ref(3) // 默认正常难度
-
-// 题量选择
-const questionCount = ref(30) // 默认30题
-
-// 个性化要求
-const customRequirements = ref('')
-
-// AI辅助组卷状态
-const generatingAIExam = ref(false)
-const analyzingRequirements = ref(false)
-const aiAnalysisResult = ref('')
 
 // 触发文件上传
 const triggerFileUpload = () => {
@@ -212,19 +87,67 @@ const triggerFileUpload = () => {
 const loadCoursewareList = async () => {
   try {
     const response = await teacherAPI.getCoursewareList()
+    console.log('课件列表响应:', response)
     if (response.code === 200) {
       coursewareList.value = response.data.map(item => ({
         title: item.title,
         type: 'PDF',
         size: formatFileSize(item.size || 0),
         words: '约0.2万字',
-        id: item.id
+        id: item.coursewareId
       }))
+    } else {
+      console.log('加载课件列表失败，响应码:', response.code)
     }
   } catch (error) {
     console.error('加载课件列表失败:', error)
   }
 }
+
+// 预览课件
+const previewCourseware = async (coursewareId) => {
+  try {
+    await teacherAPI.viewMyCourseware(coursewareId)
+  } catch (error) {
+    console.error('预览课件失败:', error)
+    alert('预览课件失败，请稍后重试')
+  }
+}
+
+// 下载课件
+const downloadCourseware = async (coursewareId) => {
+  try {
+    await teacherAPI.downloadMyCourseware(coursewareId)
+  } catch (error) {
+    console.error('下载课件失败:', error)
+    alert('下载课件失败，请稍后重试')
+  }
+}
+
+// 删除课件
+const deleteCoursewareItem = async (coursewareId) => {
+  if (!confirm('确定要删除这个课件吗？')) {
+    return
+  }
+  try {
+    const response = await teacherAPI.deleteCourseware(coursewareId)
+    if (response.code === 200) {
+      alert('删除成功')
+      // 重新加载课件列表
+      await loadCoursewareList()
+    } else {
+      alert('删除失败: ' + (response.message || '未知错误'))
+    }
+  } catch (error) {
+    console.error('删除课件失败:', error)
+    alert('删除课件失败，请稍后重试')
+  }
+}
+
+// 页面挂载时加载课件列表
+onMounted(() => {
+  loadCoursewareList()
+})
 
 // 处理文件上传
 const handleFileUpload = async (event) => {
@@ -256,7 +179,15 @@ const handleFileUpload = async (event) => {
 
     if (response.code === 200 || response.success) {
       alert('文件上传成功！')
-      loadCoursewareList() // 刷新课件列表
+      // 直接将上传的文件添加到课件列表
+      const newCourseware = {
+        title: response.data.title || fileName,
+        type: 'PDF',
+        size: formatFileSize(file.size),
+        words: '约0.2万字',
+        id: response.data.coursewareId || Date.now()
+      }
+      coursewareList.value.unshift(newCourseware)
     } else {
       alert('文件上传失败: ' + (response.message || response.msg || '未知错误'))
     }
@@ -288,92 +219,6 @@ const formatFileSize = (bytes) => {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB'
   return (bytes / (1024 * 1024)).toFixed(1) + 'MB'
 }
-
-// 切换章节选择
-const toggleChapter = (chapterId) => {
-  const chapter = chapters.value.find(ch => ch.id === chapterId)
-  if (chapter) {
-    chapter.checked = !chapter.checked
-  }
-}
-
-// 获取难度文本
-const getDifficultyText = (value) => {
-  const difficultyMap = {
-    1: '极易',
-    2: '偏易',
-    3: '正常',
-    4: '偏难',
-    5: '极难'
-  }
-  return difficultyMap[value] || '正常'
-}
-
-// AI智能组卷
-const generateAIExam = async () => {
-  // 收集选择的章节
-  const selectedChapters = chapters.value.filter(ch => ch.checked).map(ch => ch.name)
-
-  if (selectedChapters.length === 0) {
-    alert('请至少选择一个章节')
-    return
-  }
-
-  generatingAIExam.value = true
-  try {
-    // 构建组卷参数
-    const examParams = {
-      chapters: selectedChapters,
-      difficulty: getDifficultyText(difficulty.value),
-      questionCount: questionCount.value,
-      customRequirements: customRequirements.value
-    }
-
-    // 模拟AI生成组卷
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    console.log('AI生成组卷参数:', examParams)
-    alert('AI智能组卷生成成功！')
-  } finally {
-    generatingAIExam.value = false
-  }
-}
-
-// 分析需求
-const analyzeRequirements = async () => {
-  const selectedChapters = chapters.value.filter(ch => ch.checked).map(ch => ch.name)
-
-  if (selectedChapters.length === 0) {
-    alert('请至少选择一个章节')
-    return
-  }
-
-  analyzingRequirements.value = true
-  try {
-    // 模拟需求分析
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    aiAnalysisResult.value = `基于选择的章节 ${selectedChapters.join('、')}，建议生成 ${questionCount.value} 道 ${getDifficultyText(difficulty.value)} 难度的题目，涵盖概念理解、实际应用和综合分析等多种题型。`
-  } finally {
-    analyzingRequirements.value = false
-  }
-}
-
-// 生成组卷
-const generateExam = () => {
-  // 收集选择的章节
-  const selectedChapters = chapters.value.filter(ch => ch.checked).map(ch => ch.name)
-
-  // 构建组卷参数
-  const examParams = {
-    chapters: selectedChapters,
-    difficulty: getDifficultyText(difficulty.value),
-    questionCount: questionCount.value,
-    customRequirements: customRequirements.value
-  }
-
-  // 模拟生成组卷
-  console.log('生成组卷参数:', examParams)
-  alert('组卷生成成功！')
-}
 </script>
 
 <style scoped>
@@ -396,7 +241,7 @@ const generateExam = () => {
 /* 主内容区域 */
 .main-content {
   flex: 1;
-  padding: 24px 24px 24px 12px;
+  padding: 70px 24px 24px 12px;
   overflow-y: auto;
 }
 
@@ -517,243 +362,45 @@ const generateExam = () => {
   color: #6c757d;
 }
 
-.download-btn {
-  padding: 6px 12px;
-  background: #e9ecef;
+.courseware-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.action-btn {
+  padding: 4px 8px;
   border: none;
-  border-radius: 6px;
-  font-size: 12px;
-  color: #495057;
+  border-radius: 4px;
+  font-size: 11px;
   cursor: pointer;
   transition: all 0.3s;
 }
 
-.download-btn:hover {
-  background: #dee2e6;
-}
-
-/* 智能组卷 */
-.exam-section {
-  background: #fff;
-  border-radius: 16px;
-  padding: 24px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-}
-
-.exam-config {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 32px;
-}
-
-/* 章节选择 */
-.config-group {
-  margin-bottom: 24px;
-}
-
-.config-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1a2a3a;
-  margin: 0 0 16px 0;
-}
-
-.chapter-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.chapter-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: #555;
-  cursor: pointer;
-}
-
-.chapter-item input[type="checkbox"] {
-  width: 16px;
-  height: 16px;
-  cursor: pointer;
-}
-
-/* 滑块容器 */
-.slider-container {
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-}
-
-.slider-group {
-  margin-bottom: 16px;
-}
-
-.slider-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-
-.slider-track {
-  flex: 1;
-  position: relative;
-}
-
-.slider-track input[type="range"] {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: #e9ecef;
-  outline: none;
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.slider-track input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #4a90e2;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(74, 144, 226, 0.3);
-}
-
-.slider-track input[type="range"]::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #4a90e2;
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 2px 6px rgba(74, 144, 226, 0.3);
-}
-
-.slider-markers {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 8px;
-  font-size: 12px;
-  color: #6c757d;
-}
-
-.marker {
-  position: relative;
-}
-
-.slider-value {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1a2a3a;
-  min-width: 60px;
-}
-
-/* 个性化要求 */
-.textarea-container {
-  width: 100%;
-}
-
-.requirements-textarea {
-  width: 100%;
-  min-height: 120px;
-  padding: 12px;
-  border: 1px solid #dee2e6;
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: inherit;
-  resize: vertical;
-  transition: all 0.3s;
-}
-
-.requirements-textarea:focus {
-  outline: none;
-  border-color: #4a90e2;
-  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
-}
-
-/* AI辅助组卷 */
-.ai-assist-section {
-  margin-bottom: 24px;
-  padding: 16px;
-  background: #f8f9fa;
-  border-radius: 12px;
-  border-left: 4px solid #4a90e2;
-}
-
-.ai-assist-buttons {
-  display: flex;
-  gap: 12px;
-  margin: 16px 0;
-}
-
-.ai-btn {
-  padding: 10px 20px;
+.preview-btn {
   background: #4a90e2;
   color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background 0.3s;
 }
 
-.ai-btn:hover:not(:disabled) {
+.preview-btn:hover {
   background: #357abd;
 }
 
-.ai-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.ai-analysis-result {
-  margin-top: 16px;
-  padding: 12px;
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #e9ecef;
-}
-
-.ai-analysis-result h4 {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1a2a3a;
-  margin: 0 0 8px 0;
-}
-
-.ai-analysis-result p {
-  font-size: 13px;
-  color: #555;
-  line-height: 1.5;
-  margin: 0;
-}
-
-/* 生成组卷 */
-.generate-section {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  margin-top: 16px;
-}
-
-.generate-btn {
-  padding: 12px 32px;
-  background: #8b0000;
+.download-btn {
+  background: #6c757d;
   color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.3s;
 }
 
-.generate-btn:hover {
-  background: #6b0000;
+.download-btn:hover {
+  background: #5a6268;
+}
+
+.delete-btn {
+  background: #dc3545;
+  color: white;
+}
+
+.delete-btn:hover {
+  background: #c82333;
 }
 
 /* 响应式 */
@@ -776,35 +423,5 @@ const generateExam = () => {
   .courseware-grid {
     grid-template-columns: 1fr;
   }
-
-  .exam-config {
-    grid-template-columns: 1fr;
-  }
-
-  .slider-wrapper {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 12px;
-  }
-
-  .slider-value {
-    align-self: flex-end;
-  }
-
-  .generate-section {
-    justify-content: center;
-  }
-}
-
-/* 难度颜色 */
-.slider-markers .marker:nth-child(1) { color: #4caf50; } /* 极易 */
-.slider-markers .marker:nth-child(2) { color: #8bc34a; } /* 偏易 */
-.slider-markers .marker:nth-child(3) { color: #ffc107; } /* 正常 */
-.slider-markers .marker:nth-child(4) { color: #ff9800; } /* 偏难 */
-.slider-markers .marker:nth-child(5) { color: #f44336; } /* 极难 */
-
-/* 题量颜色 */
-.slider-markers .marker {
-  color: #4a90e2;
 }
 </style>

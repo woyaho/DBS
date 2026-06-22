@@ -66,13 +66,25 @@
                 >
                   {{ publishingResults ? '公布中...' : '公布批改结果' }}
                 </button>
+                <button
+                  class="export-grades-btn"
+                  @click="exportGrades"
+                >
+                  📊 导出成绩
+                </button>
 
                 <!-- AI批改进度 -->
                 <div v-if="isAutoReviewing" class="ai-review-progress">
                   <div class="progress-bar">
                     <div class="progress-fill" :style="{ width: autoReviewProgress + '%' }"></div>
                   </div>
-                  <div class="progress-text">正在批改：{{ autoReviewProgress }}%</div>
+                  <div class="progress-text">{{ aiProgressData.status === '' ? '正在初始化...' : `正在批改：${autoReviewProgress}%` }}</div>
+                  <div class="progress-details">
+                    <span class="detail-item">总数: {{ aiProgressData.totalCount }}</span>
+                    <span class="detail-item">已完成: {{ aiProgressData.completedCount }}</span>
+                    <span class="detail-item failed">失败: {{ aiProgressData.failedCount }}</span>
+                    <span class="detail-item">状态: {{ aiProgressData.status === '' ? '初始化中' : getProgressStatusText(aiProgressData.status) }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -136,6 +148,9 @@
               <div class="table-header">
                 <h3 class="section-title">学生作业列表</h3>
                 <div class="filter-section">
+                  <button class="action-btn unsubmitted-btn" @click="showUnsubmittedStudents">
+                    👥 查看未提交学生 ({{ unsubmittedCount }})
+                  </button>
                   <select v-model="selectedStatus" class="filter-select">
                     <option value="all">全部状态</option>
                     <option value="pending">待批改</option>
@@ -189,6 +204,13 @@
                         <button class="action-btn" @click="reviewHomework(item)">
                           {{ item.status === 'pending' ? '批改' : '查看' }}
                         </button>
+                        <button
+                          v-if="item.status === 'completed'"
+                          class="action-btn ai-result-btn"
+                          @click="viewAiResultDetail(item.id)"
+                        >
+                          查看AI结果
+                        </button>
                       </td>
                     </tr>
                   </tbody>
@@ -235,16 +257,11 @@
                       <div v-for="(file, index) in selectedSubmission.files" :key="index" class="file-item">
                         <span class="file-icon">📄</span>
                         <span class="file-name">{{ file.name }}</span>
-                        <button class="download-btn" @click="downloadFile(file)">下载</button>
+                        <div class="file-actions">
+                          <button class="preview-btn" @click="previewFile(selectedSubmission.id)">预览</button>
+                          <button class="download-btn" @click="downloadFile(selectedSubmission.id)">下载</button>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-
-                  <!-- 作业内容 -->
-                  <div class="submission-content">
-                    <h4 class="subsection-title">作业内容</h4>
-                    <div class="content-box">
-                      {{ selectedSubmission.content }}
                     </div>
                   </div>
 
@@ -276,25 +293,6 @@
                     ></textarea>
                   </div>
 
-                  <!-- AI辅助评阅 -->
-                  <div class="ai-assist-section">
-                    <h4 class="subsection-title">AI辅助评阅</h4>
-                    <div class="ai-assist-content">
-                      <div class="ai-assist-buttons">
-                        <button class="ai-btn" @click="generateAIComment" :disabled="generatingAIComment">
-                          {{ generatingAIComment ? '生成中...' : 'AI生成评语' }}
-                        </button>
-                        <button class="ai-btn" @click="analyzeContent" :disabled="analyzingContent">
-                          {{ analyzingContent ? '分析中...' : '内容分析' }}
-                        </button>
-                      </div>
-                      <div v-if="aiAnalysisResult" class="ai-analysis-result">
-                        <h5>内容分析结果：</h5>
-                        <p>{{ aiAnalysisResult }}</p>
-                      </div>
-                    </div>
-                  </div>
-
                   <!-- 快捷评语 -->
                   <div class="quick-comments">
                     <span class="quick-comment-label">快捷评语：</span>
@@ -316,6 +314,119 @@
                 </div>
               </div>
             </div>
+
+            <!-- 未提交学生弹窗 -->
+            <div v-if="showUnsubmittedModal" class="modal-overlay" @click.self="closeUnsubmittedModal">
+              <div class="modal-content unsubmitted-modal">
+                <div class="modal-header">
+                  <h3>未提交学生名单 - {{ homeworkInfo.title }}</h3>
+                  <button class="close-btn" @click="closeUnsubmittedModal">×</button>
+                </div>
+                <div class="modal-body">
+                  <div v-if="loadingUnsubmitted" class="loading-container">
+                    <div class="loading-spinner"></div>
+                    <p>加载中...</p>
+                  </div>
+                  <div v-else-if="unsubmittedStudents.length === 0" class="empty-state">
+                    <div class="empty-icon">✅</div>
+                    <p>所有学生均已提交作业</p>
+                  </div>
+                  <div v-else>
+                    <table class="unsubmitted-table">
+                      <thead>
+                        <tr>
+                          <th>学号</th>
+                          <th>姓名</th>
+                          <th>邮箱</th>
+                          <th>电话</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="(student, index) in unsubmittedStudents" :key="index">
+                          <td>{{ student.username }}</td>
+                          <td>{{ student.name }}</td>
+                          <td>{{ student.email || '-' }}</td>
+                          <td>{{ student.phone || '-' }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <div class="modal-footer">
+                      <p>共 {{ unsubmittedStudents.length }} 名学生未提交</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- AI结果详情弹窗 -->
+            <div v-if="aiResultDetail" class="modal-overlay" @click.self="closeAiResultModal">
+              <div class="modal-content ai-result-modal">
+                <div class="modal-header">
+                  <h3>AI批改结果详情 - {{ aiResultDetail?.studentName || '未知' }}</h3>
+                  <button class="close-btn" @click="closeAiResultModal">×</button>
+                </div>
+                <div class="modal-body">
+                  <div class="ai-result-info">
+                    <div class="info-row">
+                      <span class="info-label">学号：</span>
+                      <span class="info-value">{{ aiResultDetail?.studentUsername || '-' }}</span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-label">姓名：</span>
+                      <span class="info-value">{{ aiResultDetail?.studentName || '-' }}</span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-label">作业ID：</span>
+                      <span class="info-value">{{ aiResultDetail?.assignmentId || '-' }}</span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-label">批次ID：</span>
+                      <span class="info-value">{{ aiResultDetail?.jobId || '-' }}</span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-label">AI状态：</span>
+                      <span class="info-value">{{ aiResultDetail?.aiStatus ? getAiStatusText(aiResultDetail.aiStatus) : '-' }}</span>
+                    </div>
+                    <div class="info-row score-section">
+                      <span class="info-label">AI评分：</span>
+                      <span class="info-value ai-score">{{ aiResultDetail?.aiScore || '-' }}</span>
+                      <span class="ai-grade">{{ aiResultDetail?.aiGrade || '' }}</span>
+                    </div>
+                    <div class="info-row score-section">
+                      <span class="info-label">最终得分：</span>
+                      <span class="info-value final-score">{{ aiResultDetail?.finalScore || '-' }}</span>
+                      <span class="final-grade">{{ aiResultDetail?.finalGrade || '' }}</span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-label">学生可见：</span>
+                      <span class="info-value">{{ aiResultDetail?.studentVisible ? '是' : '否' }}</span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-label">处理时间：</span>
+                      <span class="info-value">{{ aiResultDetail?.processedAt ? formatDateTime(aiResultDetail.processedAt) : '-' }}</span>
+                    </div>
+                    <div v-if="aiResultDetail?.errorMessage" class="info-row error-message">
+                      <span class="info-label">错误信息：</span>
+                      <span class="info-value">{{ aiResultDetail.errorMessage }}</span>
+                    </div>
+                  </div>
+                  <div class="report-links">
+                    <h4>报告下载</h4>
+                    <div class="link-buttons">
+                      <button class="report-link-btn" @click="downloadReport('teacher-report')">
+                        📊 教师报告
+                      </button>
+                      <button class="report-link-btn" @click="downloadReport('student-report')">
+                        📝 学生报告
+                      </button>
+                      <button class="report-link-btn" @click="downloadReport('reference-answer')">
+                        📖 参考答案
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </main>
       </div>
@@ -323,8 +434,14 @@
   </div>
 </template>
 
+<script>
+export default {
+  name: 'TeacherHomeworkReview'
+}
+</script>
+
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import TeacherSidebar from '@/components/Teacher/TeacherSidebar.vue'
 import TeacherHeader from '@/components/Teacher/TeacherHeader.vue'
@@ -339,12 +456,20 @@ const searchKeyword = ref('')
 const selectedSubmission = ref(null)
 const reviewScore = ref('')
 const reviewComment = ref('')
-const generatingAIComment = ref(false)
-const analyzingContent = ref(false)
-const aiAnalysisResult = ref('')
 const sortBy = ref('default')
 const isAutoReviewing = ref(false)
 const autoReviewProgress = ref(0)
+const aiProgressData = ref({
+  assignmentId: 0,
+  batchId: '',
+  status: '',
+  totalCount: 0,
+  completedCount: 0,
+  failedCount: 0,
+  startedAt: '',
+  finishedAt: ''
+})
+const aiResultDetail = ref(null)
 const loading = ref(false)
 const loadingSubmissions = ref(false)
 const publishingResults = ref(false)
@@ -367,6 +492,18 @@ const homeworkInfo = ref({
 
 // 作业数据
 const homeworkData = ref([])
+
+// 未提交学生相关
+const unsubmittedStudents = ref([])
+const showUnsubmittedModal = ref(false)
+const loadingUnsubmitted = ref(false)
+
+// 未提交人数（通过计算得出，确保准确性）
+const unsubmittedCount = computed(() => {
+  const total = homeworkInfo.value.totalCount || 0
+  const submitted = homeworkInfo.value.submittedCount || 0
+  return Math.max(0, total - submitted)
+})
 
 // 切换班级
 const switchClass = (classId) => {
@@ -398,6 +535,64 @@ const getHomeworkStatusText = (status) => {
     upcoming: '未开始'
   }
   return statusMap[status] || status
+}
+
+// 获取AI批改进度状态文本
+const getProgressStatusText = (status) => {
+  const statusMap = {
+    pending: '等待中',
+    running: '运行中',
+    completed: '已完成',
+    partial_success: '部分完成',
+    failed: '失败'
+  }
+  return statusMap[status] || status
+}
+
+// 获取AI结果状态文本
+const getAiStatusText = (status) => {
+  const statusMap = {
+    COMPLETED: '已完成',
+    FAILED: '失败',
+    PENDING: '等待中',
+    RUNNING: '运行中'
+  }
+  return statusMap[status] || status
+}
+
+// 查看AI结果详情
+const viewAiResultDetail = async (submissionId) => {
+  try {
+    const response = await teacherAPI.getAiResultDetail(submissionId)
+    if (response.code === 200) {
+      aiResultDetail.value = {
+        ...response.data,
+        submissionId: submissionId
+      }
+    }
+  } catch (error) {
+    console.error('获取AI结果详情失败:', error)
+    alert('获取AI结果详情失败，请稍后重试')
+  }
+}
+
+// 关闭AI结果弹窗
+const closeAiResultModal = () => {
+  aiResultDetail.value = null
+}
+
+// 下载AI报告
+const downloadReport = async (kind) => {
+  if (!aiResultDetail.value || !aiResultDetail.value.submissionId) {
+    alert('无法获取提交ID')
+    return
+  }
+  try {
+    await teacherAPI.downloadAiReport(aiResultDetail.value.submissionId, kind)
+  } catch (error) {
+    console.error('下载报告失败:', error)
+    alert('下载报告失败，请稍后重试')
+  }
 }
 
 // 格式化日期时间
@@ -488,10 +683,11 @@ const loadSubmissions = async (assignmentId) => {
         homeworkName: homeworkInfo.value.title || '未命名作业',
         submitTime: item.submittedAt ? new Date(item.submittedAt).toLocaleString('zh-CN') :
                    item.submitTime || item.submitted_time || '未知时间',
-        status: (item.grade === null || item.grade === undefined) ? 'pending' : 'completed',
-        score: item.grade !== null && item.grade !== undefined ? item.grade : null,
-        files: item.mergedPdfName || item.viewPdfUrl ? [
-          { name: item.mergedPdfName || item.fileName || '作业文件', url: item.viewPdfUrl }
+        // 根据后端API文档，status字段是大写的COMPLETED/PENDING等，grade是字符串如"A-"
+        status: item.status === 'COMPLETED' ? 'completed' : 'pending',
+        score: item.grade || null,
+        files: item.mergedPdfName ? [
+          { name: item.mergedPdfName, url: `/api/teacher/download-submission?submissionId=${item.submissionId}` }
         ] : [],
         content: item.textContent || item.content || '无内容'
       }))
@@ -539,6 +735,32 @@ const loadAssignmentStatus = async (assignmentId) => {
   }
 }
 
+// 查看未提交学生
+const showUnsubmittedStudents = async () => {
+  const homeworkId = parseInt(route.params.id) || 1
+  loadingUnsubmitted.value = true
+
+  try {
+    const response = await teacherAPI.getUnsubmittedStudents(homeworkId)
+    if (response.code === 200) {
+      unsubmittedStudents.value = response.data || []
+    } else {
+      unsubmittedStudents.value = []
+    }
+  } catch (error) {
+    console.error('获取未提交学生名单失败:', error)
+    unsubmittedStudents.value = []
+  } finally {
+    loadingUnsubmitted.value = false
+    showUnsubmittedModal.value = true
+  }
+}
+
+// 关闭未提交学生弹窗
+const closeUnsubmittedModal = () => {
+  showUnsubmittedModal.value = false
+}
+
 // 快捷评语
 const quickComments = [
   '完成得很好，继续保持！',
@@ -550,20 +772,86 @@ const quickComments = [
 ]
 
 // 加载数据
+const loadData = async (homeworkId) => {
+  loading.value = true
+  selectedHomework.value = homeworkId.toString()
+
+  try {
+    // 并行加载作业详情和状态统计
+    const [homeworkResponse, statusResponse] = await Promise.all([
+      teacherAPI.getAssignmentDetail(homeworkId),
+      teacherAPI.getAssignmentStatus(homeworkId)
+    ])
+
+    // 处理作业详情
+    if (homeworkResponse.code === 200 && homeworkResponse.data) {
+      homeworkInfo.value = {
+        id: homeworkResponse.data.id || homeworkId,
+        title: homeworkResponse.data.title || '未命名作业',
+        description: homeworkResponse.data.description || homeworkResponse.data.content || '',
+        publishTime: homeworkResponse.data.publishTime || homeworkResponse.data.startTime || '',
+        deadline: homeworkResponse.data.deadline || homeworkResponse.data.endTime || '',
+        totalCount: homeworkResponse.data.totalCount || homeworkResponse.data.totalStudents || 0,
+        submittedCount: homeworkResponse.data.submittedCount || 0,
+        reviewedCount: homeworkResponse.data.reviewedCount || 0
+      }
+    } else {
+      homeworkInfo.value = {
+        id: homeworkId,
+        title: `作业${homeworkId}`,
+        description: '',
+        publishTime: '',
+        deadline: '',
+        totalCount: 0,
+        submittedCount: 0,
+        reviewedCount: 0
+      }
+    }
+
+    // 处理状态统计（优先使用API返回的数据更新统计）
+    if (statusResponse.code === 200 && statusResponse.data) {
+      if (statusResponse.data.totalStudents !== undefined) {
+        homeworkInfo.value.totalCount = statusResponse.data.totalStudents
+      }
+      if (statusResponse.data.submittedCount !== undefined) {
+        homeworkInfo.value.submittedCount = statusResponse.data.submittedCount
+      }
+      if (statusResponse.data.reviewedCount !== undefined) {
+        homeworkInfo.value.reviewedCount = statusResponse.data.reviewedCount
+      }
+    }
+
+    // 加载作业提交列表
+    await loadSubmissions(homeworkId)
+  } catch (error) {
+    console.error('加载数据失败:', error)
+    await loadSubmissions(homeworkId)
+  } finally {
+    loading.value = false
+  }
+}
+
+// 页面挂载时加载数据
 onMounted(async () => {
-  await loadHomeworkInfo()
   const homeworkId = parseInt(route.params.id) || 1
-  await loadAssignmentStatus(homeworkId)
+  await loadData(homeworkId)
+})
+
+// 监听路由参数变化，重新加载数据
+watch(() => route.params.id, async (newId) => {
+  if (newId) {
+    const homeworkId = parseInt(newId) || 1
+    await loadData(homeworkId)
+  }
 })
 
 // 过滤后的作业列表
 const filteredHomeworkList = computed(() => {
   let filtered = homeworkData.value
 
-  // 按作业筛选
-  if (selectedHomework.value !== 'all') {
-    filtered = filtered.filter(item => item.homeworkName === `作业${selectedHomework.value}`)
-  }
+  // 按作业筛选（当前页面只显示一个作业的数据，所以不需要按作业名称过滤）
+  // 如果 selectedHomework 不是 'all'，说明是从作业列表页面跳转过来的，只显示当前作业的数据
+  // 由于 loadSubmissions 只加载当前作业的数据，这里不需要额外过滤
 
   // 按状态筛选
   if (selectedStatus.value !== 'all') {
@@ -576,6 +864,9 @@ const filteredHomeworkList = computed(() => {
     filtered = filtered.filter(item => item.studentName.toLowerCase().includes(keyword))
   }
 
+  // 成绩等级排序映射（从高到低）
+  const gradeOrder = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-', 'F']
+  
   // 排序
   switch (sortBy.value) {
     case 'score-desc':
@@ -583,7 +874,12 @@ const filteredHomeworkList = computed(() => {
         if (a.score === null && b.score === null) return 0
         if (a.score === null) return 1
         if (b.score === null) return -1
-        return b.score - a.score
+        const aIndex = gradeOrder.indexOf(a.score)
+        const bIndex = gradeOrder.indexOf(b.score)
+        if (aIndex === -1 && bIndex === -1) return 0
+        if (aIndex === -1) return 1
+        if (bIndex === -1) return -1
+        return aIndex - bIndex
       })
       break
     case 'score-asc':
@@ -591,7 +887,12 @@ const filteredHomeworkList = computed(() => {
         if (a.score === null && b.score === null) return 0
         if (a.score === null) return -1
         if (b.score === null) return 1
-        return a.score - b.score
+        const aIndex = gradeOrder.indexOf(a.score)
+        const bIndex = gradeOrder.indexOf(b.score)
+        if (aIndex === -1 && bIndex === -1) return 0
+        if (aIndex === -1) return -1
+        if (bIndex === -1) return 1
+        return bIndex - aIndex
       })
       break
     case 'time-desc':
@@ -638,10 +939,11 @@ const notReviewedCount = computed(() => {
 
 // 平均分
 const averageScore = computed(() => {
-  const completed = homeworkData.value.filter(item => item.score !== null)
+  const completed = homeworkData.value.filter(item => item.score !== null && !isNaN(item.score))
   if (completed.length === 0) return '—'
   const sum = completed.reduce((acc, item) => acc + item.score, 0)
-  return (sum / completed.length).toFixed(1)
+  const avg = sum / completed.length
+  return isNaN(avg) ? '—' : avg.toFixed(1)
 })
 
 // 获取分数等级样式
@@ -681,13 +983,46 @@ const closeReviewModal = () => {
   selectedSubmission.value = null
   reviewScore.value = ''
   reviewComment.value = ''
-  aiAnalysisResult.value = ''
+}
+
+// 预览文件
+const previewFile = async (submissionId) => {
+  try {
+    const response = await teacherAPI.viewSubmissionPdf(submissionId)
+    if (response && typeof response === 'object' && response.code !== undefined) {
+      alert(response.message || '预览文件失败')
+      return
+    }
+    const blob = new Blob([response], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+  } catch (error) {
+    console.error('预览文件失败:', error)
+    alert('预览文件失败，请稍后重试')
+  }
 }
 
 // 下载文件
-const downloadFile = (file) => {
-  if (file.url) {
-    window.open(file.url, '_blank')
+const downloadFile = async (submissionId) => {
+  try {
+    const response = await teacherAPI.downloadSubmissionPdf(submissionId)
+    if (response && typeof response === 'object' && response.code !== undefined) {
+      alert(response.message || '下载文件失败')
+      return
+    }
+    const blob = new Blob([response], { type: 'application/pdf' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const fileName = selectedSubmission.value?.files?.[0]?.name || `作业提交_${submissionId}.pdf`
+    a.download = fileName
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (error) {
+    console.error('下载文件失败:', error)
+    alert('下载文件失败，请稍后重试')
   }
 }
 
@@ -697,40 +1032,6 @@ const addQuickComment = (comment) => {
     reviewComment.value += '\n' + comment
   } else {
     reviewComment.value = comment
-  }
-}
-
-// 生成AI评语
-const generateAIComment = async () => {
-  if (!selectedSubmission.value) return
-
-  generatingAIComment.value = true
-  try {
-    // 模拟AI生成评语
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    const aiComment = `该作业内容完整，分析深入，思路清晰。\n\n优点：\n1. 对PostgreSQL与openGauss的技术特性对比全面\n2. 实践部分操作步骤详细\n3. 对"卡脖子"问题的认识深刻\n\n建议：\n1. 可以增加更多实际案例分析\n2. 进一步优化文档格式\n3. 加强对数据库内部结构的研究深度`
-
-    if (reviewComment.value) {
-      reviewComment.value += '\n\n--- AI辅助评语 ---\n' + aiComment
-    } else {
-      reviewComment.value = aiComment
-    }
-  } finally {
-    generatingAIComment.value = false
-  }
-}
-
-// 分析内容
-const analyzeContent = async () => {
-  if (!selectedSubmission.value) return
-
-  analyzingContent.value = true
-  try {
-    // 模拟内容分析
-    await new Promise(resolve => setTimeout(resolve, 1500))
-    aiAnalysisResult.value = '内容分析：作业包含完整的技术特性对比、实践操作步骤和技术研究内容，符合作业要求。建议重点关注数据库内部存储结构和查询优化策略的分析深度。'
-  } finally {
-    analyzingContent.value = false
   }
 }
 
@@ -777,10 +1078,26 @@ const startAIAutoReview = async () => {
     return
   }
 
+  // 立即显示进度条和初始化状态
   isAutoReviewing.value = true
   autoReviewProgress.value = 0
 
+  // 初始化进度数据（状态为空表示正在初始化）
+  aiProgressData.value = {
+    assignmentId: 0,
+    batchId: '',
+    status: '',
+    totalCount: pendingHomework.length,
+    completedCount: 0,
+    failedCount: 0,
+    startedAt: '',
+    finishedAt: ''
+  }
+
   try {
+    // 等待UI更新后再调用API
+    await new Promise(resolve => setTimeout(resolve, 100))
+
     const homeworkId = parseInt(route.params.id) || 1
     const response = await teacherAPI.aiGradeAssignment(homeworkId, false)
 
@@ -790,12 +1107,31 @@ const startAIAutoReview = async () => {
         const progressResponse = await teacherAPI.getAiGradeProgress(homeworkId)
         if (progressResponse.code === 200) {
           const progressData = progressResponse.data
-          autoReviewProgress.value = Math.round((progressData.completedCount / progressData.totalCount) * 100)
+
+          // 保存完整的进度数据
+          aiProgressData.value = {
+            assignmentId: progressData.assignmentId || 0,
+            batchId: progressData.batchId || '',
+            status: progressData.status || '',
+            totalCount: progressData.totalCount || 0,
+            completedCount: progressData.completedCount || 0,
+            failedCount: progressData.failedCount || 0,
+            startedAt: progressData.startedAt || '',
+            finishedAt: progressData.finishedAt || ''
+          }
+
+          // 计算进度百分比
+          if (aiProgressData.value.totalCount > 0) {
+            autoReviewProgress.value = Math.round((aiProgressData.value.completedCount / aiProgressData.value.totalCount) * 100)
+          }
 
           if (progressData.status === 'completed' || progressData.status === 'partial_success') {
             // 加载最新的批改结果
             await loadSubmissions(homeworkId)
-            alert(`AI自动批改完成！共批改了 ${progressData.completedCount} 份作业`)
+            const message = aiProgressData.value.failedCount > 0
+              ? `AI自动批改完成！成功批改 ${aiProgressData.value.completedCount} 份，失败 ${aiProgressData.value.failedCount} 份`
+              : `AI自动批改完成！共批改了 ${aiProgressData.value.completedCount} 份作业`
+            alert(message)
             isAutoReviewing.value = false
             autoReviewProgress.value = 0
           } else {
@@ -805,8 +1141,8 @@ const startAIAutoReview = async () => {
         }
       }
 
-      // 开始轮询
-      setTimeout(checkProgress, 2000)
+      // 立即执行第一次进度查询，然后再开始定时轮询
+      await checkProgress()
     }
   } catch (error) {
     console.error('AI批改失败:', error)
@@ -841,14 +1177,53 @@ const publishResults = async () => {
     publishingResults.value = false
   }
 }
+
+// 导出成绩
+const exportGrades = async () => {
+  try {
+    const homeworkId = parseInt(route.params.id) || 1
+    console.log('开始导出成绩, homeworkId:', homeworkId)
+
+    const blob = await teacherAPI.exportGrades(homeworkId)
+    console.log('获取到的blob:', blob)
+
+    // 创建下载链接
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+
+    // 设置文件名
+    const filename = `成绩导出_作业${homeworkId}_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.csv`
+    link.setAttribute('href', url)
+    link.setAttribute('download', filename)
+    link.style.visibility = 'hidden'
+
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    console.log('成绩导出成功！')
+    alert('成绩导出成功！')
+  } catch (error) {
+    console.error('导出成绩失败:', error)
+    alert('导出成绩失败，请稍后重试')
+  }
+}
 </script>
 
 <style scoped>
 /* 页面布局 */
 .page-layout {
   display: flex;
+  flex-direction: column;
   min-height: 100vh;
   background: #F0F2F5;
+}
+
+/* 内容容器 */
+.content-container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 /* 主内容区 */
@@ -857,19 +1232,29 @@ const publishResults = async () => {
   display: flex;
   flex-direction: column;
   margin-left: 200px;
-  width: calc(100% - 200px);
+  padding-top: 70px;
 }
 
 /* 主内容区域 */
 .main-content {
   flex: 1;
-  padding: 24px 24px 24px 12px;
+  padding: 16px 24px 24px 12px;
   overflow-y: auto;
 }
 
 .homework-review-container {
-  max-width: 100%;
+  width: 100%;
+  max-width: none;
   margin: 0;
+  box-sizing: border-box;
+}
+
+/* 确保卡片能铺满宽度 */
+.homework-info-card,
+.stats-grid,
+.homework-list-card {
+  width: 100%;
+  box-sizing: border-box;
 }
 
 /* 班级切换栏 */
@@ -1036,6 +1421,28 @@ const publishResults = async () => {
   box-shadow: none;
 }
 
+/* 导出成绩按钮 */
+.export-grades-btn {
+  padding: 10px 20px;
+  background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.export-grades-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 152, 0, 0.4);
+}
+
 /* AI批改进度条 */
 .ai-review-progress {
   margin-top: 12px;
@@ -1063,6 +1470,27 @@ const publishResults = async () => {
   color: #6c757d;
   text-align: center;
   margin-top: 4px;
+}
+
+.progress-details {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.progress-details .detail-item {
+  font-size: 12px;
+  color: #495057;
+  padding: 4px 8px;
+  background: #f8f9fa;
+  border-radius: 4px;
+}
+
+.progress-details .detail-item.failed {
+  color: #dc3545;
+  background: #fff3f3;
 }
 
 .page-title {
@@ -1257,6 +1685,27 @@ const publishResults = async () => {
   position: relative;
 }
 
+/* 未提交学生按钮 */
+.unsubmitted-btn {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  margin-right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.unsubmitted-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.4);
+}
+
 .search-input {
   padding: 8px 32px 8px 12px;
   border: 1px solid #dee2e6;
@@ -1361,6 +1810,123 @@ const publishResults = async () => {
   background: #357abd;
 }
 
+.action-btn.ai-result-btn {
+  background: #6c757d;
+  margin-left: 8px;
+}
+
+.action-btn.ai-result-btn:hover {
+  background: #5a6268;
+}
+
+.ai-score-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.grade-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: #e9ecef;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+/* AI结果详情弹窗 */
+.ai-result-modal {
+  max-width: 500px;
+}
+
+.ai-result-info {
+  margin-bottom: 20px;
+}
+
+.info-row {
+  display: flex;
+  padding: 10px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-row.error-message {
+  background: #fff5f5;
+  margin: 0 -20px;
+  padding: 10px 20px;
+}
+
+.info-label {
+  width: 100px;
+  font-weight: 500;
+  color: #666;
+  flex-shrink: 0;
+}
+
+.info-value {
+  color: #333;
+}
+
+.info-value.ai-score,
+.info-value.final-score {
+  font-size: 24px;
+  font-weight: bold;
+  color: #4a90e2;
+}
+
+.info-value.final-score {
+  color: #28a745;
+}
+
+.ai-grade,
+.final-grade {
+  font-size: 14px;
+  padding: 4px 10px;
+  background: #e9ecef;
+  border-radius: 4px;
+  margin-left: 10px;
+}
+
+.score-section {
+  align-items: center;
+}
+
+.report-links {
+  padding-top: 20px;
+  border-top: 1px solid #e9ecef;
+}
+
+.report-links h4 {
+  margin-bottom: 12px;
+  color: #495057;
+}
+
+.link-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.report-link-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 16px;
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  color: #495057;
+  text-decoration: none;
+  font-size: 14px;
+  transition: all 0.3s;
+}
+
+.report-link-btn:hover {
+  background: #e9ecef;
+  border-color: #adb5bd;
+}
+
 /* 空状态 */
 .empty-state {
   text-align: center;
@@ -1400,6 +1966,43 @@ const publishResults = async () => {
   max-height: 90vh;
   overflow-y: auto;
   animation: modalFadeIn 0.2s ease;
+}
+
+/* 未提交学生弹窗 */
+.unsubmitted-modal {
+  max-width: 700px;
+}
+
+.unsubmitted-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+}
+
+.unsubmitted-table th,
+.unsubmitted-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.unsubmitted-table th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #495057;
+}
+
+.unsubmitted-table tr:hover {
+  background: #f8f9fa;
+}
+
+.modal-footer {
+  padding: 16px;
+  text-align: center;
+  border-top: 1px solid #e9ecef;
+  margin-top: 16px;
+  color: #6c757d;
+  font-size: 14px;
 }
 
 @keyframes modalFadeIn {
@@ -1523,6 +2126,26 @@ const publishResults = async () => {
   background: #dee2e6;
 }
 
+.preview-btn {
+  padding: 6px 12px;
+  background: #3B82F6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.preview-btn:hover {
+  background: #2563EB;
+}
+
+.file-actions {
+  display: flex;
+  gap: 8px;
+}
+
 /* 作业内容 */
 .submission-content {
   margin-bottom: 24px;
@@ -1594,62 +2217,6 @@ const publishResults = async () => {
   outline: none;
   border-color: #4a90e2;
   box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
-}
-
-/* AI辅助评阅 */
-.ai-assist-section {
-  margin-bottom: 24px;
-}
-
-.ai-assist-content {
-  margin-top: 12px;
-}
-
-.ai-assist-buttons {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.ai-btn {
-  padding: 8px 16px;
-  background: #4a90e2;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 14px;
-  cursor: pointer;
-  transition: background 0.3s;
-}
-
-.ai-btn:hover:not(:disabled) {
-  background: #357abd;
-}
-
-.ai-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.ai-analysis-result {
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 12px;
-  margin-top: 12px;
-}
-
-.ai-analysis-result h5 {
-  font-size: 14px;
-  font-weight: 600;
-  color: #1a2a3a;
-  margin: 0 0 8px 0;
-}
-
-.ai-analysis-result p {
-  font-size: 13px;
-  color: #555;
-  line-height: 1.5;
-  margin: 0;
 }
 
 /* 快捷评语 */

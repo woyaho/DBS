@@ -12,15 +12,62 @@
         <div class="statistics-container">
           <h1 class="page-title">成绩统计</h1>
 
-          <!-- 作业选择 -->
-          <div class="homework-selector">
-            <label>选择作业：</label>
-            <select v-model="selectedHomeworkId" class="select-input" @change="loadStatistics">
-              <option value="">全部作业</option>
-              <option v-for="homework in homeworkList" :key="homework.id" :value="homework.id">
-                {{ homework.name }}
-              </option>
-            </select>
+          <!-- 知识点雷达图 -->
+          <div class="card radar-card">
+            <h3 class="chart-title">学生知识点雷达图</h3>
+            <div class="radar-controls">
+              <div class="homework-selector">
+                <label>选择作业：</label>
+                <select v-model="radarAssignmentId" class="select-input" @change="loadStudentList">
+                  <option value="">请选择作业</option>
+                  <option v-for="homework in homeworkList" :key="homework.id" :value="homework.id">
+                    {{ homework.name }}
+                  </option>
+                </select>
+              </div>
+              <div class="student-selector">
+                <label>选择学生：</label>
+                <select v-model="selectedStudentUsername" class="select-input" @change="loadStudentRadar">
+                  <option value="">请选择学生</option>
+                  <option v-for="student in studentList" :key="student.username" :value="student.username">
+                    {{ student.name }} ({{ student.username }})
+                  </option>
+                </select>
+              </div>
+            </div>
+            <div class="radar-content">
+              <div v-if="radarData.loading" class="loading-state">
+                <div class="loading-icon">⏳</div>
+                <p>加载中...</p>
+              </div>
+              <div v-else-if="radarData.error" class="error-state">
+                <div class="error-icon">❌</div>
+                <p>{{ radarData.error }}</p>
+              </div>
+              <div v-else-if="radarData.data" class="radar-chart-wrapper">
+                <RadarChart
+                  :data="radarData.data.personalScores"
+                  :compare-data="radarData.data.classAverage"
+                  :size="280"
+                />
+                <div class="radar-scores">
+                  <h4>{{ selectedStudentName }} 的各维度得分</h4>
+                  <div class="score-list">
+                    <div v-for="(score, index) in radarData.data.personalScores" :key="index" class="score-item">
+                      <span class="score-label">{{ dimensions[index] }}</span>
+                      <span class="score-value">{{ score }}分</span>
+                      <span v-if="radarData.data.classAverage[index]" class="score-compare">
+                        (班级平均: {{ radarData.data.classAverage[index] }}分)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="empty-state">
+                <div class="empty-icon">📈</div>
+                <p>请选择作业和学生查看雷达图</p>
+              </div>
+            </div>
           </div>
 
           <!-- 统计卡片 -->
@@ -71,8 +118,8 @@
               <h3 class="chart-title">成绩分布饼图</h3>
               <div class="chart-container">
                 <div class="pie-chart">
-                  <div 
-                    v-for="(item, index) in scoreDistribution" 
+                  <div
+                    v-for="(item, index) in scoreDistribution"
                     :key="index"
                     class="pie-slice"
                     :style="{
@@ -86,8 +133,8 @@
                   </div>
                 </div>
                 <div class="chart-legend">
-                  <div 
-                    v-for="(item, index) in scoreDistribution" 
+                  <div
+                    v-for="(item, index) in scoreDistribution"
                     :key="index"
                     class="legend-item"
                   >
@@ -104,12 +151,12 @@
               <h3 class="chart-title">成绩分布柱状图</h3>
               <div class="chart-container">
                 <div class="bar-chart">
-                  <div 
-                    v-for="(item, index) in scoreDistribution" 
+                  <div
+                    v-for="(item, index) in scoreDistribution"
                     :key="index"
                     class="bar-item"
                   >
-                    <div 
+                    <div
                       class="bar"
                       :style="{
                         height: (item.count / maxCount * 100) + '%',
@@ -162,6 +209,8 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import TeacherSidebar from '@/components/Teacher/TeacherSidebar.vue'
 import TeacherHeader from '@/components/Teacher/TeacherHeader.vue'
+import RadarChart from '@/components/RadarChart.vue'
+import { teacherAPI } from '@/services/api'
 
 const router = useRouter()
 const selectedHomeworkId = ref('')
@@ -183,6 +232,71 @@ const statistics = ref({
 
 // 成绩分布数据
 const scoreDistribution = ref([])
+
+// 雷达图相关
+const radarAssignmentId = ref('')
+const studentList = ref([])
+const selectedStudentUsername = ref('')
+const selectedStudentName = ref('')
+const dimensions = ['数据建模', 'SQL查询', '数据库设计', '事务处理', '性能优化', '安全管理']
+const radarData = ref({
+  loading: false,
+  error: '',
+  data: null
+})
+
+// 加载学生列表
+const loadStudentList = async () => {
+  studentList.value = []
+  selectedStudentUsername.value = ''
+  selectedStudentName.value = ''
+  radarData.value = { loading: false, error: '', data: null }
+
+  if (!radarAssignmentId.value) return
+
+  try {
+    const data = await teacherAPI.getAssignmentSubmissions(radarAssignmentId.value)
+    const submissions = data.data || []
+    studentList.value = submissions.map(s => ({
+      username: s.studentUsername,
+      name: s.studentName || s.studentUsername
+    }))
+  } catch (error) {
+    console.error('加载学生列表失败:', error)
+  }
+}
+
+// 加载学生雷达图数据
+const loadStudentRadar = async () => {
+  if (!radarAssignmentId.value || !selectedStudentUsername.value) {
+    radarData.value = { loading: false, error: '', data: null }
+    return
+  }
+
+  const student = studentList.value.find(s => s.username === selectedStudentUsername.value)
+  selectedStudentName.value = student?.name || selectedStudentUsername.value
+
+  radarData.value = { loading: true, error: '', data: null }
+
+  try {
+    const result = await teacherAPI.getKnowledgeRadar(radarAssignmentId.value, selectedStudentUsername.value)
+    radarData.value = {
+      loading: false,
+      error: '',
+      data: {
+        personalScores: result.data?.personalScores || [0, 0, 0, 0, 0, 0],
+        classAverage: result.data?.classAverage || []
+      }
+    }
+  } catch (error) {
+    radarData.value = {
+      loading: false,
+      error: '加载雷达图数据失败',
+      data: null
+    }
+    console.error('加载雷达图数据失败:', error)
+  }
+}
 
 // 计算最大数量用于柱状图高度
 const maxCount = computed(() => {
@@ -214,7 +328,7 @@ const loadStatistics = () => {
 // 查看抄袭作业列表
 const viewPlagiarismList = () => {
   // 实际项目中这里会跳转到抄袭作业列表页面
-  router.push('/teacher/grades')
+  router.push('/teacher/homework')
 }
 
 // 导出报表
@@ -223,8 +337,20 @@ const exportReport = (format) => {
   alert(`正在导出${format.toUpperCase()}报表...`)
 }
 
+// 加载作业列表
+const loadHomeworkList = async () => {
+  try {
+    const response = await teacherAPI.getAssignmentList()
+    // 适配不同的响应格式
+    homeworkList.value = response.data?.homeworks || response.data?.assignments || response.data || []
+    console.log('加载作业列表:', homeworkList.value)
+  } catch (error) {
+    console.error('加载作业列表失败:', error)
+  }
+}
+
 onMounted(() => {
-  loadStatistics()
+  loadHomeworkList()
 })
 </script>
 
@@ -528,6 +654,130 @@ onMounted(() => {
   display: flex;
   gap: 12px;
   justify-content: flex-end;
+}
+
+/* 雷达图卡片 */
+.radar-card {
+  margin-bottom: 24px;
+}
+
+.radar-controls {
+  display: flex;
+  gap: 24px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.student-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.student-selector label {
+  font-size: 14px;
+  color: #666;
+}
+
+.radar-content {
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.radar-chart-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+}
+
+.radar-scores {
+  flex: 1;
+  min-width: 200px;
+}
+
+.radar-scores h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 16px;
+}
+
+.score-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.score-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.score-label {
+  font-size: 14px;
+  color: #666;
+  min-width: 80px;
+}
+
+.score-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #4a90e2;
+}
+
+.score-compare {
+  font-size: 12px;
+  color: #999;
+}
+
+/* 加载状态 */
+.loading-state,
+.error-state {
+  text-align: center;
+  padding: 48px 20px;
+}
+
+.loading-icon,
+.error-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.loading-state p,
+.error-state p {
+  color: #666;
+  font-size: 14px;
+}
+
+.error-state {
+  color: #d32f2f;
+}
+
+/* 空状态 */
+.empty-state {
+  text-align: center;
+  padding: 48px 20px;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.empty-state p {
+  color: #666;
+  font-size: 14px;
 }
 
 /* 按钮样式 */

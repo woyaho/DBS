@@ -79,6 +79,7 @@
 import { ref, computed, onMounted } from 'vue'
 import StudentSidebar from '@/components/Student/StudentSidebar.vue'
 import StudentHeader from '@/components/Student/StudentHeader.vue'
+import { authAPI } from '@/services/api.js'
 
 const userInfo = ref({
   username: 'student',

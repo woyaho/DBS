@@ -2,7 +2,7 @@
   <div class="page-layout">
     <!-- 栏头 -->
     <StudentHeader />
-    
+
     <div class="content-container">
       <!-- 侧边栏 -->
       <StudentSidebar />
@@ -41,6 +41,55 @@
                 <div class="stat-info">
                   <div class="stat-value">{{ highestScore }}</div>
                   <div class="stat-label">作业最高分</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 知识点雷达图 -->
+            <div class="radar-card">
+              <div class="card-header">
+                <h3 class="section-title">知识点雷达图</h3>
+                <div class="homework-selector">
+                  <label>选择作业：</label>
+                  <select v-model="selectedAssignmentId" class="select-input" @change="loadRadarData">
+                    <option value="">请选择作业</option>
+                    <option v-for="homework in assignmentList" :key="homework.id" :value="homework.id">
+                      {{ homework.name }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+              <div class="radar-content">
+                <div v-if="radarData.loading" class="loading-state">
+                  <div class="loading-icon">⏳</div>
+                  <p>加载中...</p>
+                </div>
+                <div v-else-if="radarData.error" class="error-state">
+                  <div class="error-icon">❌</div>
+                  <p>{{ radarData.error }}</p>
+                </div>
+                <div v-else-if="radarData.data" class="radar-chart-wrapper">
+                  <RadarChart
+                    :data="radarData.data.personalScores"
+                    :compare-data="radarData.data.classAverage"
+                    :size="280"
+                  />
+                  <div class="radar-scores">
+                    <h4>各维度得分</h4>
+                    <div class="score-list">
+                      <div v-for="(score, index) in radarData.data.personalScores" :key="index" class="score-item">
+                        <span class="score-label">{{ dimensions[index] }}</span>
+                        <span class="score-value">{{ score }}分</span>
+                        <span v-if="radarData.data.classAverage[index]" class="score-compare">
+                          (班级平均: {{ radarData.data.classAverage[index] }}分)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="empty-state">
+                  <div class="empty-icon">📈</div>
+                  <p>请选择作业查看知识点雷达图</p>
                 </div>
               </div>
             </div>
@@ -152,10 +201,12 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import StudentSidebar from '@/components/Student/StudentSidebar.vue'
 import StudentHeader from '@/components/Student/StudentHeader.vue'
 import Breadcrumb from '@/components/Breadcrumb.vue'
+import RadarChart from '@/components/RadarChart.vue'
+import { studentAPI } from '@/services/api'
 
 // 学期选择
 const selectedSemester = ref('all')
@@ -165,6 +216,121 @@ const selectedCourse = ref(null)
 
 // 成绩数据
 const gradesData = ref([])
+
+// 作业列表（用于雷达图选择）
+const assignmentList = ref([])
+const selectedAssignmentId = ref('')
+
+// 雷达图维度
+const dimensions = ['数据建模', 'SQL查询', '数据库设计', '事务处理', '性能优化', '安全管理']
+
+// 雷达图数据
+const radarData = ref({
+  loading: false,
+  error: '',
+  data: null
+})
+
+// 加载成绩数据（使用作业列表和作业状态接口）
+const loadGrades = async () => {
+  console.log('=== loadGrades 开始 ===')
+  try {
+    // 获取作业列表
+    const assignmentListResponse = await studentAPI.getAssignmentList()
+    console.log('=== 作业列表响应 ===', assignmentListResponse)
+
+    if (assignmentListResponse.code !== 200 || !Array.isArray(assignmentListResponse.data)) {
+      console.error('=== 获取作业列表失败 ===')
+      gradesData.value = []
+      return
+    }
+
+    // 对每个已提交的作业获取成绩状态
+    const assignments = assignmentListResponse.data
+    const grades = []
+
+    for (const assignment of assignments) {
+      if (assignment.submitted) {
+        try {
+          const statusResponse = await studentAPI.getAssignmentStatus(assignment.assignmentId)
+          console.log(`=== 作业 ${assignment.assignmentId} 状态响应 ===`, statusResponse)
+
+          if (statusResponse.code === 200 && statusResponse.data) {
+            const status = statusResponse.data
+            grades.push({
+              id: assignment.assignmentId,
+              code: '-',
+              name: assignment.title || '未命名作业',
+              semester: '2024-2025-2',
+              usualScore: status.finalScore || status.aiScore || 0,
+              finalScore: status.finalScore || 0,
+              totalScore: status.finalScore || status.aiScore || 0,
+              rank: '-',
+              teacher: status.creatorUsername || '-',
+              comment: status.completed ? '已批改' : '待批改'
+            })
+          }
+        } catch (error) {
+          console.error(`=== 获取作业 ${assignment.assignmentId} 状态失败 ===`, error)
+        }
+      }
+    }
+
+    gradesData.value = grades
+    console.log('=== 成绩数据加载成功，共', gradesData.value.length, '条 ===')
+  } catch (error) {
+    console.error('加载成绩数据失败:', error)
+    console.error('错误堆栈:', error.stack)
+    gradesData.value = []
+  }
+}
+
+// 加载作业列表
+const loadAssignmentList = async () => {
+  console.log('=== loadAssignmentList 开始 ===')
+  try {
+    const data = await studentAPI.getAssignmentList()
+    assignmentList.value = data.data || []
+    console.log('=== 作业列表加载成功，共', assignmentList.value.length, '条 ===')
+  } catch (error) {
+    console.error('加载作业列表失败:', error)
+  }
+}
+
+// 加载雷达图数据
+const loadRadarData = async () => {
+  if (!selectedAssignmentId.value) {
+    radarData.value = { loading: false, error: '', data: null }
+    return
+  }
+
+  radarData.value = { loading: true, error: '', data: null }
+
+  try {
+    const result = await studentAPI.getKnowledgeRadar(selectedAssignmentId.value)
+    radarData.value = {
+      loading: false,
+      error: '',
+      data: {
+        personalScores: result.data?.personalScores || [0, 0, 0, 0, 0, 0],
+        classAverage: result.data?.classAverage || []
+      }
+    }
+  } catch (error) {
+    radarData.value = {
+      loading: false,
+      error: '加载雷达图数据失败',
+      data: null
+    }
+    console.error('加载雷达图数据失败:', error)
+  }
+}
+
+onMounted(() => {
+  console.log('=== StudentGradeQuery 挂载 ===')
+  loadGrades()
+  loadAssignmentList()
+})
 
 // 过滤当前学期和搜索
 const filteredGrades = computed(() => {
@@ -681,6 +847,127 @@ const closeDetail = () => {
   font-size: 14px;
   line-height: 1.5;
   color: #495057;
+}
+
+/* 雷达图卡片 */
+.radar-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 28px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.homework-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.homework-selector label {
+  font-size: 14px;
+  color: #6c757d;
+}
+
+.select-input {
+  padding: 8px 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  font-size: 14px;
+  min-width: 200px;
+}
+
+.radar-content {
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.radar-chart-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: 100%;
+}
+
+.radar-scores {
+  flex: 1;
+  min-width: 200px;
+}
+
+.radar-scores h4 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a2a3a;
+  margin-bottom: 16px;
+}
+
+.score-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.score-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.score-label {
+  font-size: 14px;
+  color: #495057;
+  min-width: 80px;
+}
+
+.score-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #4a90e2;
+}
+
+.score-compare {
+  font-size: 12px;
+  color: #6c757d;
+}
+
+/* 加载状态 */
+.loading-state,
+.error-state {
+  text-align: center;
+  padding: 48px 20px;
+}
+
+.loading-icon,
+.error-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.loading-state p,
+.error-state p {
+  color: #6c757d;
+  font-size: 14px;
+}
+
+.error-state {
+  color: #dc3545;
 }
 
 /* 空状态 */

@@ -20,7 +20,7 @@
               <span class="btn-icon">📤</span>
               <span>导出</span>
             </button>
-            <button class="btn btn-secondary" @click="importUsers">
+            <button class="btn btn-secondary" @click="openImportModal">
               <span class="btn-icon">📥</span>
               <span>导入</span>
             </button>
@@ -29,19 +29,20 @@
 
         <div class="filters">
           <div class="filter-group">
-            <input 
-              type="text" 
-              v-model="searchKeyword" 
-              placeholder="搜索用户名/邮箱/姓名" 
+            <input
+              type="text"
+              v-model="searchKeyword"
+              placeholder="搜索用户名/邮箱/姓名"
               class="form-input"
+              @input="handleSearch"
             />
-            <select v-model="roleFilter" class="form-select">
+            <select v-model="roleFilter" class="form-select" @change="handleSearch">
               <option value="">所有角色</option>
               <option value="student">学生</option>
               <option value="teacher">教师</option>
               <option value="admin">管理员</option>
             </select>
-            <select v-model="statusFilter" class="form-select">
+            <select v-model="statusFilter" class="form-select" @change="handleSearch">
               <option value="">所有状态</option>
               <option value="active">启用</option>
               <option value="inactive">禁用</option>
@@ -79,9 +80,9 @@
             <thead>
               <tr>
                 <th>
-                  <input 
-                    type="checkbox" 
-                    v-model="selectAll" 
+                  <input
+                    type="checkbox"
+                    v-model="selectAll"
                     @change="toggleSelectAll"
                   />
                 </th>
@@ -91,42 +92,48 @@
                 <th>邮箱</th>
                 <th>角色</th>
                 <th>状态</th>
-                <th>创建时间</th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="user in filteredUsers" :key="user.id" :class="{ 'selected': selectedUsers.includes(user.id) }">
+              <tr v-for="user in filteredUsers" :key="user?.id || user?.username" :class="{ 'selected': selectedUsers.includes(user?.id) }">
                 <td>
-                  <input 
-                    type="checkbox" 
-                    :value="user.id" 
+                  <input
+                    type="checkbox"
+                    :value="user?.id"
                     v-model="selectedUsers"
                   />
                 </td>
-                <td>{{ user.id }}</td>
-                <td>{{ user.username }}</td>
-                <td>{{ user.name }}</td>
-                <td>{{ user.email }}</td>
+                <td>{{ user?.id || '-' }}</td>
+                <td>{{ user?.username || user?.account || '-' }}</td>
+                <td>{{ user?.name || '-' }}</td>
+                <td>{{ user?.email || '-' }}</td>
                 <td>
-                  <span class="role-badge" :class="user.role">
-                    {{ roleMap[user.role] }}
+                  <span class="role-badge" :class="user?.role || user?.identity">
+                    {{ roleMap[user?.role] || roleMap[user?.identity] || '-' }}
                   </span>
                 </td>
                 <td>
-                  <span class="status-badge" :class="user.status">
-                    {{ statusMap[user.status] }}
+                  <span class="status-badge" :class="user?.status || (user?.enabled ? 'active' : 'inactive')">
+                    {{ statusMap[user?.status] || (user?.enabled ? '启用' : '禁用') }}
                   </span>
                 </td>
-                <td>{{ user.createdAt }}</td>
                 <td class="actions">
                   <button class="action-btn edit" @click="openEditUserModal(user)">
                     编辑
                   </button>
-                  <button class="action-btn reset" @click="resetPassword(user.id)">
+                  <button
+                    class="action-btn status"
+                    :class="(user?.status || (user?.enabled ? 'active' : 'inactive')) === 'active' ? 'disable' : 'enable'"
+                    @click="toggleUserStatus(user)"
+                  >
+                    {{ (user?.status || (user?.enabled ? 'active' : 'inactive')) === 'active' ? '禁用' : '启用' }}
+                  </button>
+
+                  <button class="action-btn reset" @click="resetPassword(user?.id)">
                     重置密码
                   </button>
-                  <button class="action-btn delete" @click="deleteUser(user.id)">
+                  <button class="action-btn delete" @click="deleteUser(user?.id)">
                     删除
                   </button>
                 </td>
@@ -136,9 +143,9 @@
         </div>
 
         <div class="pagination">
-          <button 
-            class="btn btn-outline" 
-            @click="currentPage--" 
+          <button
+            class="btn btn-outline"
+            @click="currentPage--"
             :disabled="currentPage === 1"
           >
             上一页
@@ -146,9 +153,24 @@
           <span class="page-info">
             第 {{ currentPage }} 页，共 {{ totalPages }} 页
           </span>
-          <button 
-            class="btn btn-outline" 
-            @click="currentPage++" 
+          <div class="page-jump">
+            <span>跳转到</span>
+            <input
+              type="number"
+              v-model.number="jumpPage"
+              min="1"
+              :max="totalPages"
+              @keyup.enter="goToPage"
+              class="jump-input"
+            />
+            <span>页</span>
+            <button class="btn btn-outline jump-btn" @click="goToPage">
+              确定
+            </button>
+          </div>
+          <button
+            class="btn btn-outline"
+            @click="currentPage++"
             :disabled="currentPage === totalPages"
           >
             下一页
@@ -224,7 +246,15 @@
                 </div>
                 <div class="form-group">
                   <label>邮箱</label>
-                  <input type="email" v-model="editUser.email" required class="form-input" />
+                  <input type="email" v-model="editUser.email" class="form-input" placeholder="选填" />
+                </div>
+                <div class="form-group">
+                  <label>联系电话</label>
+                  <input type="tel" v-model="editUser.phone" class="form-input" placeholder="选填" />
+                </div>
+                <div class="form-group">
+                  <label>身份证号</label>
+                  <input type="text" v-model="editUser.idCard" class="form-input" placeholder="选填" />
                 </div>
                 <div class="form-group">
                   <label>角色</label>
@@ -244,6 +274,80 @@
                 <div class="form-actions">
                   <button type="button" class="btn btn-outline" @click="showEditModal = false">取消</button>
                   <button type="submit" class="btn btn-primary">保存</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <!-- 批量导入模态框 -->
+        <div class="modal" v-if="showImportModal">
+          <div class="modal-mask" @click="closeImportModal"></div>
+          <div class="modal-container">
+            <div class="modal-header">
+              <h3>批量导入用户</h3>
+              <button class="close-btn" @click="closeImportModal">×</button>
+            </div>
+            <div class="modal-body">
+              <form @submit.prevent="submitImport" class="import-form">
+                <!-- 先选择角色 -->
+                <div class="form-group">
+                  <label>导入角色</label>
+                  <select v-model="importData.identity" class="form-select">
+                    <option value="student">学生</option>
+                    <option value="teacher">教师</option>
+                  </select>
+                </div>
+
+                <!-- 再选择学年 -->
+                <div class="form-group">
+                  <label>学年 <span class="required">*</span></label>
+                  <select v-model="importData.academicYear" class="form-select">
+                    <option :value="2024">2024</option>
+                    <option :value="2025">2025</option>
+                    <option :value="2026">2026</option>
+                    <option :value="2027">2027</option>
+                  </select>
+                </div>
+
+                <!-- 最后选择文件 -->
+                <div class="form-group">
+                  <label>选择文件 <span class="required">*</span></label>
+                  <div class="file-upload">
+                    <input
+                      ref="importFileInput"
+                      type="file"
+                      accept=".xlsx,.xls"
+                      class="file-input"
+                      @change="onImportFileSelect"
+                    />
+                    <div class="file-upload-label">
+                      <span v-if="!importFileName">点击选择文件或拖拽到此处</span>
+                      <span v-else>{{ importFileName }}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 示例文件下载 -->
+                <div class="form-group">
+                  <label>示例文件</label>
+                  <div class="template-links">
+                    <button type="button" class="btn btn-outline btn-sm" @click="downloadStudentTemplate">
+                      下载学生导入模板
+                    </button>
+                    <button type="button" class="btn btn-outline btn-sm" @click="downloadTeacherTemplate">
+                      下载教师导入模板
+                    </button>
+                  </div>
+                  <p class="form-hint">请根据模板格式填写数据，支持 .xlsx 格式</p>
+                </div>
+
+                <div class="form-actions">
+                  <button type="button" class="btn btn-outline" @click="closeImportModal">取消</button>
+                  <button type="submit" class="btn btn-primary" :disabled="importLoading">
+                    <span v-if="importLoading">导入中...</span>
+                    <span v-else>开始导入</span>
+                  </button>
                 </div>
               </form>
             </div>
@@ -280,7 +384,8 @@ const searchKeyword = ref('')
 const roleFilter = ref('')
 const statusFilter = ref('')
 const currentPage = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(20)
+const jumpPage = ref(1)
 
 // 选择状态
 const selectedUsers = ref([])
@@ -289,6 +394,15 @@ const selectAll = ref(false)
 // 模态框状态
 const showAddModal = ref(false)
 const showEditModal = ref(false)
+const showImportModal = ref(false)
+
+// 批量导入数据
+const importData = ref({
+  identity: 'student',
+  academicYear: new Date().getFullYear()
+})
+const importFileName = ref('')
+const importLoading = ref(false)
 
 // 表单数据（字段名与后端API保持一致）
 const newUser = ref({
@@ -306,6 +420,8 @@ const editUser = ref({
   username: '',
   name: '',
   email: '',
+  phone: '',
+  idCard: '',
   role: '',
   status: ''
 })
@@ -325,15 +441,23 @@ const statusMap = {
 // 计算属性
 const filteredUsers = computed(() => {
   let result = users.value.filter(user => {
-    const matchesSearch = !searchKeyword.value || 
-      user.username.includes(searchKeyword.value) ||
-      user.name.includes(searchKeyword.value) ||
-      user.email.includes(searchKeyword.value)
-    const matchesRole = !roleFilter.value || user.role === roleFilter.value
-    const matchesStatus = !statusFilter.value || user.status === statusFilter.value
+    if (!user) return false
+    const userUsername = user.username || user.account || ''
+    const userName = user.name || ''
+    const userEmail = user.email || ''
+    const matchesSearch = !searchKeyword.value ||
+      userUsername.includes(searchKeyword.value) ||
+      userName.includes(searchKeyword.value) ||
+      userEmail.includes(searchKeyword.value)
+    // 兼容 role 和 identity 字段
+    const userRole = user.role || user.identity
+    const matchesRole = !roleFilter.value || userRole === roleFilter.value
+    // 兼容 status 和 enabled 字段
+    const userStatus = user.status || (user.enabled ? 'active' : 'inactive')
+    const matchesStatus = !statusFilter.value || userStatus === statusFilter.value
     return matchesSearch && matchesRole && matchesStatus
   })
-  
+
   // 分页
   const start = (currentPage.value - 1) * pageSize.value
   const end = start + pageSize.value
@@ -342,12 +466,20 @@ const filteredUsers = computed(() => {
 
 const totalPages = computed(() => {
   const filteredCount = users.value.filter(user => {
-    const matchesSearch = !searchKeyword.value || 
-      user.username.includes(searchKeyword.value) ||
-      user.name.includes(searchKeyword.value) ||
-      user.email.includes(searchKeyword.value)
-    const matchesRole = !roleFilter.value || user.role === roleFilter.value
-    const matchesStatus = !statusFilter.value || user.status === statusFilter.value
+    if (!user) return false
+    const userUsername = user.username || user.account || ''
+    const userName = user.name || ''
+    const userEmail = user.email || ''
+    const matchesSearch = !searchKeyword.value ||
+      userUsername.includes(searchKeyword.value) ||
+      userName.includes(searchKeyword.value) ||
+      userEmail.includes(searchKeyword.value)
+    // 兼容 role 和 identity 字段
+    const userRole = user.role || user.identity
+    const matchesRole = !roleFilter.value || userRole === roleFilter.value
+    // 兼容 status 和 enabled 字段
+    const userStatus = user.status || (user.enabled ? 'active' : 'inactive')
+    const matchesStatus = !statusFilter.value || userStatus === statusFilter.value
     return matchesSearch && matchesRole && matchesStatus
   }).length
   return Math.ceil(filteredCount / pageSize.value)
@@ -357,7 +489,7 @@ const totalPages = computed(() => {
 const loadUsers = async () => {
   loading.value = true
   error.value = ''
-  
+
   try {
     const response = await adminAPI.getUserList({
       page: currentPage.value,
@@ -366,15 +498,38 @@ const loadUsers = async () => {
       role: roleFilter.value,
       status: statusFilter.value
     })
-    if (response.data && Array.isArray(response.data)) {
-      users.value = response.data
+    // 兼容不同的响应结构
+    let data = []
+    if (Array.isArray(response)) {
+      data = response
+    } else if (response.data && Array.isArray(response.data)) {
+      data = response.data
+    } else if (response.code === 200 && response.data) {
+      data = Array.isArray(response.data) ? response.data : []
     }
+    // 验证数据格式
+    users.value = data.map(user => ({
+      id: user?.id || user?.userId || null,
+      username: user?.username || user?.account || '',
+      name: user?.name || '',
+      email: user?.email || '',
+      role: user?.role || user?.identity || '',
+      status: user?.status || (user?.enabled ? 'active' : 'inactive'),
+      enabled: user?.enabled || false,
+      createdAt: user?.createdAt || user?.createTime || user?.registerTime || ''
+    }))
   } catch (err) {
     error.value = '加载用户数据失败，请重试'
     console.error('加载用户数据失败:', err)
   } finally {
     loading.value = false
   }
+}
+
+// 搜索处理
+const handleSearch = () => {
+  currentPage.value = 1
+  loadUsers()
 }
 
 // 方法
@@ -391,7 +546,18 @@ const resetFilters = () => {
   roleFilter.value = ''
   statusFilter.value = ''
   currentPage.value = 1
+  jumpPage.value = 1
   loadUsers()
+}
+
+const goToPage = () => {
+  const page = parseInt(jumpPage.value) || 1
+  if (page >= 1 && page <= totalPages.value) {
+    currentPage.value = page
+  } else {
+    alert(`请输入有效的页码（1-${totalPages.value}）`)
+    jumpPage.value = currentPage.value
+  }
 }
 
 const openAddUserModal = () => {
@@ -414,7 +580,7 @@ const openEditUserModal = (user) => {
 
 const addUser = async () => {
   try {
-    const response = await authAPI.register(newUser.value)
+    const response = await adminAPI.createUser(newUser.value)
     if (response.code === 200) {
       showAddModal.value = false
       alert('用户添加成功')
@@ -429,21 +595,29 @@ const addUser = async () => {
 }
 
 const updateUser = async () => {
+  console.log('[DEBUG] 开始更新用户, editUser.value:', editUser.value)
   try {
-    await adminAPI.updateUserInfo(editUser.value)
-    showEditModal.value = false
-    alert('用户更新成功')
-    loadUsers()
+    const response = await adminAPI.updateUserInfo(editUser.value)
+    console.log('[DEBUG] 更新用户响应:', response)
+
+    // 检查后端返回的业务状态码
+    if (response.code === 200) {
+      showEditModal.value = false
+      alert('用户更新成功')
+      loadUsers()
+    } else {
+      alert(`用户更新失败: ${response.message || '未知错误'}`)
+    }
   } catch (err) {
-    alert('用户更新失败，请重试')
-    console.error('更新用户失败:', err)
+    console.error('[DEBUG] 更新用户失败:', err)
+    alert(`用户更新失败: ${err.message || '请重试'}`)
   }
 }
 
 const deleteUser = async (id) => {
   if (confirm('确定要删除这个用户吗？')) {
     try {
-      // 实际项目中需要调用删除API
+      await adminAPI.deleteUser(id)
       users.value = users.value.filter(u => u.id !== id)
       selectedUsers.value = selectedUsers.value.filter(userId => userId !== id)
       alert('用户删除成功')
@@ -462,6 +636,22 @@ const resetPassword = async (id) => {
     } catch (err) {
       alert('密码重置失败，请重试')
       console.error('重置密码失败:', err)
+    }
+  }
+}
+
+const toggleUserStatus = async (user) => {
+  const newStatus = user.status === 'active' ? 'inactive' : 'active'
+  const actionText = newStatus === 'active' ? '启用' : '禁用'
+
+  if (confirm(`确定要${actionText}用户「${user.name}」吗？`)) {
+    try {
+      await adminAPI.updateUserStatus(user.id, newStatus)
+      user.status = newStatus
+      alert(`用户已成功${actionText}`)
+    } catch (err) {
+      alert(`${actionText}失败，请重试`)
+      console.error(`${actionText}用户失败:`, err)
     }
   }
 }
@@ -506,30 +696,177 @@ const batchDisable = async () => {
   }
 }
 
-const exportUsers = () => {
-  // 实际项目中这里会生成CSV或Excel文件
-  alert('用户数据导出成功')
+const exportUsers = async () => {
+  try {
+    // 获取所有用户数据（不分页）
+    const response = await adminAPI.getUserList({
+      page: 1,
+      pageSize: 9999,
+      search: searchKeyword.value,
+      role: roleFilter.value,
+      status: statusFilter.value
+    })
+
+    let data = []
+    if (Array.isArray(response)) {
+      data = response
+    } else if (response.data && Array.isArray(response.data)) {
+      data = response.data
+    } else if (response.code === 200 && response.data) {
+      data = Array.isArray(response.data) ? response.data : []
+    }
+
+    // 转换数据格式
+    const userData = data.map(user => ({
+      id: user?.id || '',
+      username: user?.username || user?.account || '',
+      name: user?.name || '',
+      email: user?.email || '',
+      role: user?.role || user?.identity || '',
+      status: user?.status || (user?.enabled ? 'active' : 'inactive'),
+      phone: user?.phone || '',
+      idCard: user?.idCard || ''
+    }))
+
+    // 生成CSV
+    const headers = ['ID', '用户名', '姓名', '邮箱', '角色', '状态', '电话', '身份证号']
+    const roleMap = { student: '学生', teacher: '教师', admin: '管理员' }
+    const statusMap = { active: '启用', inactive: '禁用' }
+
+    const csvContent = [
+      headers.join(','),
+      ...userData.map(user => [
+        user.id,
+        `"${user.username}"`,
+        `"${user.name}"`,
+        `"${user.email}"`,
+        roleMap[user.role] || user.role,
+        statusMap[user.status] || (user.status === 'active' ? '启用' : '禁用'),
+        `"${user.phone}"`,
+        `"${user.idCard}"`
+      ].join(','))
+    ].join('\n')
+
+    // 创建下载链接
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `用户数据_${new Date().toLocaleDateString('zh-CN').replace(/\//g, '-')}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+
+    console.log('[DEBUG] 用户数据导出成功，共导出', userData.length, '条记录')
+  } catch (error) {
+    console.error('[DEBUG] 用户数据导出失败:', error)
+    alert('用户数据导出失败，请重试')
+  }
 }
 
-const importUsers = () => {
-  // 创建文件输入元素
-  const input = document.createElement('input')
-  input.type = 'file'
-  input.accept = '.xlsx,.xls,.csv'
-  input.onchange = async (event) => {
-    const file = event.target.files[0]
-    if (file) {
-      try {
-        await adminAPI.batchRegisterUsers(file)
-        alert('用户数据导入成功')
-        loadUsers()
-      } catch (err) {
-        alert('用户数据导入失败，请重试')
-        console.error('导入用户失败:', err)
-      }
-    }
+const importFileInput = ref(null)
+
+const openImportModal = () => {
+  showImportModal.value = true
+}
+
+const closeImportModal = () => {
+  showImportModal.value = false
+  importFileName.value = ''
+  importLoading.value = false
+  if (importFileInput.value) {
+    importFileInput.value.value = ''
   }
-  input.click()
+}
+
+const onImportFileSelect = () => {
+  if (importFileInput.value && importFileInput.value.files && importFileInput.value.files.length > 0) {
+    importFileName.value = importFileInput.value.files[0].name
+  } else {
+    importFileName.value = ''
+  }
+}
+
+const submitImport = async () => {
+  if (!importFileInput.value || !importFileInput.value.files || importFileInput.value.files.length === 0) {
+    alert('请选择文件')
+    return
+  }
+
+  importLoading.value = true
+
+  try {
+    const file = importFileInput.value.files[0]
+    console.log('[DEBUG] 开始导入文件:', file.name, '大小:', file.size, '类型:', file.type)
+    
+    const response = await adminAPI.batchRegisterUsers(
+      file, 
+      importData.value.identity, 
+      importData.value.academicYear
+    )
+    console.log('[DEBUG] 导入响应:', response)
+
+    if (response.code === 200) {
+      const data = response.data || {}
+      const successCount = data.successCount || 0
+      const failCount = data.failCount || 0
+      const failDetails = data.failDetails || []
+
+      let message = `导入完成：成功 ${successCount} 条`
+      if (failCount > 0) {
+        message += `，失败 ${failCount} 条`
+      }
+      alert(message)
+
+      if (failDetails.length > 0) {
+        console.warn('[DEBUG] 导入失败详情:', failDetails)
+      }
+      closeImportModal()
+    } else {
+      alert(`导入失败：${response.message || '未知错误'}`)
+    }
+    loadUsers()
+  } catch (err) {
+    console.error('[DEBUG] 导入用户失败:', err)
+    alert(`用户数据导入失败：${err.message || '请重试'}`)
+  } finally {
+    importLoading.value = false
+  }
+}
+
+const downloadStudentTemplate = async () => {
+  try {
+    const response = await adminAPI.downloadStudentTemplate()
+    const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = '学生批量导入模板.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  } catch (error) {
+    console.error('下载学生模板失败:', error)
+    alert('下载模板失败，请重试')
+  }
+}
+
+const downloadTeacherTemplate = async () => {
+  try {
+    const response = await adminAPI.downloadTeacherTemplate()
+    const blob = new Blob([response], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = '教师批量导入模板.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  } catch (error) {
+    console.error('下载教师模板失败:', error)
+    alert('下载模板失败，请重试')
+  }
 }
 
 onMounted(() => {
@@ -795,6 +1132,24 @@ onMounted(() => {
   background: #ffcdd2;
 }
 
+.action-btn.status.enable {
+  background: #e8f5e8;
+  color: #4caf50;
+}
+
+.action-btn.status.enable:hover {
+  background: #c8e6c9;
+}
+
+.action-btn.status.disable {
+  background: #fff3e0;
+  color: #ff9800;
+}
+
+.action-btn.status.disable:hover {
+  background: #ffe0b2;
+}
+
 .pagination {
   display: flex;
   justify-content: center;
@@ -806,6 +1161,33 @@ onMounted(() => {
 .page-info {
   font-size: 14px;
   color: #666;
+}
+
+.page-jump {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #666;
+}
+
+.jump-input {
+  width: 60px;
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 14px;
+  text-align: center;
+}
+
+.jump-input:focus {
+  outline: none;
+  border-color: #4a90e2;
+}
+
+.jump-btn {
+  padding: 6px 12px;
+  font-size: 14px;
 }
 
 .modal {

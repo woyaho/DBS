@@ -13,11 +13,6 @@
           <span class="dropdown-arrow">{{ dropdownOpen ? '▼' : '▶' }}</span>
         </div>
         <div v-if="dropdownOpen" class="dropdown-menu">
-          <div class="dropdown-item" @click="modifyAvatar">修改头像</div>
-          <div class="dropdown-item" @click="modifyPassword">修改密码</div>
-          <div class="dropdown-item" @click="emailBinding">邮箱绑定</div>
-          <div class="dropdown-item" @click="phoneBinding">手机绑定</div>
-          <div class="dropdown-divider"></div>
           <div class="dropdown-item logout" @click="logout">退出登录</div>
         </div>
       </div>
@@ -59,26 +54,6 @@ const handleClickOutside = (e) => {
 
 const toggleDropdown = () => {
   dropdownOpen.value = !dropdownOpen.value
-}
-
-const modifyAvatar = () => {
-  console.log('修改头像')
-  dropdownOpen.value = false
-}
-
-const modifyPassword = () => {
-  console.log('修改密码')
-  dropdownOpen.value = false
-}
-
-const emailBinding = () => {
-  console.log('邮箱绑定')
-  dropdownOpen.value = false
-}
-
-const phoneBinding = () => {
-  console.log('手机绑定')
-  dropdownOpen.value = false
 }
 
 const logout = () => {

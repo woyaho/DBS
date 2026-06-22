@@ -8,6 +8,7 @@
       <li :class="{ active: currentPath === '/admin/users' }" @click="navigateTo('/admin/users')"> 用户管理</li>
       <li :class="{ active: currentPath === '/admin/classes' }" @click="navigateTo('/admin/classes')"> 班级管理</li>
       <li :class="{ active: currentPath === '/admin/homework' }" @click="navigateTo('/admin/homework')"> 作业管理</li>
+      <li :class="{ active: currentPath === '/admin/feedback' }" @click="navigateTo('/admin/feedback')"> 反馈管理</li>
       <li :class="{ active: currentPath === '/admin/logs' }" @click="navigateTo('/admin/logs')"> 系统日志</li>
     </ul>
   </aside>

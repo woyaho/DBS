@@ -2,7 +2,7 @@
   <div class="page-layout">
     <!-- 栏头 -->
     <StudentHeader />
-    
+
     <div class="content-container">
       <!-- 侧边栏 -->
       <StudentSidebar />
@@ -139,6 +139,7 @@ import { ref, computed, onMounted } from 'vue'
 import StudentSidebar from '@/components/Student/StudentSidebar.vue'
 import StudentHeader from '@/components/Student/StudentHeader.vue'
 import Breadcrumb from '@/components/Breadcrumb.vue'
+import { studentAPI } from '@/services/api.js'
 
 // 用户信息
 const userName = ref('')
@@ -174,14 +175,104 @@ onMounted(() => {
     const userData = JSON.parse(user)
     userName.value = userData.name || userData.username || '学生用户'
   }
+
+  // 并行加载待提交作业列表和作业统计
+  loadStudentData()
 })
+
+// 加载学生数据（独立请求，互不影响）
+const loadStudentData = async () => {
+  console.log('=== loadStudentData 开始 ===')
+
+  // 1. 加载作业列表（用于统计）
+  try {
+    const assignmentListResponse = await studentAPI.getAssignmentList()
+    console.log('=== 作业列表响应（用于统计） ===', assignmentListResponse)
+
+    if (assignmentListResponse.code === 200 && Array.isArray(assignmentListResponse.data)) {
+      const assignments = assignmentListResponse.data
+      const now = new Date().getTime()
+
+      // 已完成：已提交的作业
+      const completed = assignments.filter(a => a.submitted === true).length
+
+      // 待提交：未截止且未提交的作业
+      const pending = assignments.filter(a => {
+        if (a.submitted === true) return false
+        const endTime = new Date(a.endTime).getTime()
+        return endTime > now
+      }).length
+
+      completedCount.value = completed
+      pendingCount.value = pending
+
+      console.log('=== 作业统计加载成功 ===')
+      console.log('=== 总作业数:', assignments.length)
+      console.log('=== 已完成:', completed)
+      console.log('=== 待提交(未截止):', pending)
+    }
+  } catch (error) {
+    console.error('=== 获取作业列表失败 ===', error)
+  }
+
+  // 2. 加载待提交作业列表
+  try {
+    const upcomingResponse = await studentAPI.getUpcomingAssignments(7)
+    if (upcomingResponse.code === 200 && upcomingResponse.data) {
+      const unsubmitted = upcomingResponse.data.filter(item => !item.submitted)
+      pendingHomework.value = unsubmitted.map(item => ({
+        id: item.assignmentId,
+        name: item.title,
+        type: 'homework',
+        typeText: '作业',
+        deadline: item.endTime,
+        submitted: item.submitted || false
+      }))
+      console.log('=== 待提交作业加载成功 ===', pendingHomework.value.length, '条')
+    }
+  } catch (error) {
+    console.error('=== 获取待提交作业失败 ===', error)
+  }
+
+  // 3. 加载平均成绩
+  try {
+    const averageScoreResponse = await studentAPI.getAverageScore()
+    console.log('=== 平均成绩响应 ===', averageScoreResponse)
+    if (averageScoreResponse.code === 200 && averageScoreResponse.data) {
+      const scoreData = averageScoreResponse.data
+      averageScore.value = scoreData.averageScore !== null ? scoreData.averageScore.toFixed(1) : '-'
+      console.log('=== 平均成绩加载成功 ===', averageScore.value)
+    }
+  } catch (error) {
+    console.error('=== 获取平均成绩失败 ===', error)
+  }
+
+  // 4. 加载最近成绩
+  try {
+    const recentGradesResponse = await studentAPI.getRecentGrades()
+    console.log('=== 最近成绩响应 ===', recentGradesResponse)
+    if (recentGradesResponse.code === 200 && Array.isArray(recentGradesResponse.data)) {
+      recentGrades.value = recentGradesResponse.data.map(item => ({
+        id: item.assignmentId,
+        homeworkName: item.title,
+        score: item.score,
+        type: 'homework',
+        typeText: item.grade || '-',
+        submittedAt: item.submittedAt
+      }))
+      console.log('=== 最近成绩加载成功 ===', recentGrades.value.length, '条')
+    }
+  } catch (error) {
+    console.error('=== 获取最近成绩失败 ===', error)
+  }
+}
 </script>
 
 <style scoped>
 /* 页面布局 */
 .page-layout {
   min-height: 100vh;
-  background: var(--bg-page);
+  background: #F0F2F5;
   display: flex;
   flex-direction: column;
 }
@@ -191,135 +282,90 @@ onMounted(() => {
   display: flex;
   flex: 1;
   min-height: 0;
+  margin-top: 60px;
+  position: relative;
 }
 
 /* 主内容区 */
 .content-area {
   flex: 1;
   margin-left: 200px;
-  margin-top: 60px;
   display: flex;
   flex-direction: column;
   min-height: calc(100vh - 60px);
+  max-width: calc(100% - 200px);
 }
 
 /* 主内容 */
 .main-content {
   flex: 1;
-  padding: var(--spacing-lg);
+  padding: 24px;
   overflow-y: auto;
+  max-width: 1400px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 /* 欢迎卡片 */
 .welcome-card {
-  background: var(--primary-gradient);
-  border-radius: var(--radius-xl);
-  padding: var(--spacing-xl);
+  background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%);
+  border-radius: 12px;
+  padding: 24px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: var(--shadow-lg);
-  margin-bottom: var(--spacing-lg);
-  color: var(--text-white);
-  position: relative;
-  overflow: hidden;
-}
-
-.welcome-card::before {
-  content: '';
-  position: absolute;
-  top: -50%;
-  right: -50%;
-  width: 200%;
-  height: 200%;
-  background: linear-gradient(45deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-  animation: welcome-shine 3s infinite;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+  margin-bottom: 24px;
+  color: #FFFFFF;
 }
 
 .welcome-content h1 {
-  margin: 0 0 var(--spacing-sm) 0;
-  font-size: var(--font-size-2xl);
+  margin: 0 0 8px 0;
+  font-size: 24px;
   font-weight: 600;
-  color: var(--text-white);
-  position: relative;
-  z-index: 1;
+  color: #FFFFFF;
 }
 
 .welcome-subtitle {
   margin: 0;
-  font-size: var(--font-size-sm);
+  font-size: 14px;
   color: rgba(255, 255, 255, 0.9);
-  position: relative;
-  z-index: 1;
 }
 
 .welcome-icon {
   font-size: 56px;
-  position: relative;
-  z-index: 1;
-  animation: bounce 2s infinite;
 }
 
 /* 统计卡片 */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
+  gap: 16px;
+  margin-bottom: 24px;
 }
 
 .stat-card {
-  background: var(--bg-white);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-lg);
+  background: #FFFFFF;
+  border-radius: 8px;
+  padding: 16px;
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
-  box-shadow: var(--shadow-md);
-  transition: all var(--transition-normal);
-  border: 1px solid var(--border-color);
-  position: relative;
-  overflow: hidden;
-}
-
-.stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: var(--primary-gradient);
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform var(--transition-normal);
-}
-
-.stat-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-lg);
-}
-
-.stat-card:hover::before {
-  transform: scaleX(1);
+  gap: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  border: 1px solid #e0e0e0;
 }
 
 .stat-icon {
   font-size: 40px;
-  width: 60px;
-  height: 60px;
+  width: 50px;
+  height: 50px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-lg);
-  background: var(--primary-light);
-  color: var(--primary-color);
-  transition: all var(--transition-normal);
-}
-
-.stat-card:hover .stat-icon {
-  transform: scale(1.1);
-  background: var(--primary-gradient-light);
+  border-radius: 8px;
+  background: #f0f7ff;
+  color: #4a90e2;
 }
 
 .stat-info {
@@ -327,96 +373,74 @@ onMounted(() => {
 }
 
 .stat-value {
-  font-size: var(--font-size-2xl);
+  font-size: 28px;
   font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: var(--spacing-xs);
+  color: #333333;
+  margin-bottom: 4px;
   font-family: 'Arial', sans-serif;
 }
 
 .stat-label {
-  font-size: var(--font-size-sm);
-  color: var(--text-secondary);
+  font-size: 14px;
+  color: #666666;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
 /* 仪表盘网格 */
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-  gap: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 24px;
+  margin-bottom: 24px;
 }
 
 /* 卡片 */
 .card {
-  background: var(--bg-white);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-md);
+  background: #FFFFFF;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   overflow: hidden;
-  border: 1px solid var(--border-color);
-  transition: all var(--transition-normal);
-}
-
-.card:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
+  border: 1px solid #e0e0e0;
 }
 
 .card-header {
-  padding: var(--spacing-md) var(--spacing-lg);
-  border-bottom: 1px solid var(--border-color);
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  background: var(--bg-light);
+  background: #fafafa;
 }
 
 .card-title {
   margin: 0;
-  font-size: var(--font-size-md);
+  font-size: 16px;
   font-weight: 600;
-  color: var(--text-primary);
+  color: #333333;
 }
 
 .view-all {
-  font-size: var(--font-size-sm);
-  color: var(--primary-color);
+  font-size: 14px;
+  color: #4a90e2;
   text-decoration: none;
-  transition: all var(--transition-normal);
   font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
 }
 
 .view-all:hover {
-  color: var(--primary-hover);
-  transform: translateX(4px);
+  color: #357abd;
 }
 
 /* 成绩列表 */
 .grade-list {
-  padding: var(--spacing-lg);
+  padding: 20px;
 }
 
 .grade-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: var(--spacing-md) 0;
-  border-bottom: 1px solid var(--border-color);
-  transition: all var(--transition-fast);
-}
-
-.grade-item:hover {
-  background: var(--bg-light);
-  padding-left: var(--spacing-md);
-  padding-right: var(--spacing-md);
-  border-radius: var(--radius-md);
-  margin: 0 -var(--spacing-md);
+  padding: 12px 0;
+  border-bottom: 1px solid #e0e0e0;
 }
 
 .grade-item:last-child {
@@ -426,70 +450,63 @@ onMounted(() => {
 .grade-info {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  gap: 12px;
   flex: 1;
 }
 
 .grade-name {
-  font-size: var(--font-size-sm);
-  color: var(--text-primary);
+  font-size: 14px;
+  color: #333333;
   font-weight: 500;
   flex: 1;
 }
 
 .grade-type {
-  padding: var(--spacing-xs) var(--spacing-md);
-  border-radius: var(--radius-full);
-  font-size: var(--font-size-xs);
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
 .grade-type.objective {
-  background: var(--primary-light);
-  color: var(--primary-color);
+  background: #f0f7ff;
+  color: #4a90e2;
 }
 
 .grade-type.semi-open {
   background: rgba(76, 175, 80, 0.1);
-  color: var(--success-color);
+  color: #4caf50;
 }
 
 .grade-type.subjective {
   background: rgba(255, 193, 7, 0.1);
-  color: var(--warning-color);
+  color: #ffc107;
 }
 
 .grade-score {
-  font-size: var(--font-size-md);
+  font-size: 16px;
   font-weight: 700;
   font-family: 'Arial', sans-serif;
-  transition: all var(--transition-fast);
 }
 
 .grade-score.excellent {
-  color: var(--success-color);
+  color: #4caf50;
 }
 
 .grade-score.good {
-  color: var(--primary-color);
+  color: #4a90e2;
 }
 
 .grade-score.medium {
-  color: var(--warning-color);
+  color: #ffc107;
 }
 
 .grade-score.pass {
-  color: var(--purple-color);
+  color: #9c27b0;
 }
 
 .grade-score.fail {
-  color: var(--error-color);
-}
-
-.grade-item:hover .grade-score {
-  transform: scale(1.1);
+  color: #f44336;
 }
 
 /* 公告列表 */

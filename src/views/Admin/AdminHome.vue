@@ -2,7 +2,7 @@
   <div class="page-layout">
     <!-- 栏头 -->
     <AdminHeader />
-    
+
     <div class="content-container">
       <!-- 侧边栏 -->
       <AdminSidebar />
@@ -31,10 +31,10 @@
               <p style="font-size: 32px; font-weight: bold; color: var(--success-color);">{{ classCount }}</p>
               <p>共 {{ totalStudentsInClasses.toLocaleString() }} 名学生</p>
             </div>
-            <div class="stat-card">
+            <div class="stat-card clickable" @click="goToFeedback">
               <h3>待处理反馈</h3>
               <p style="font-size: 32px; font-weight: bold; color: var(--warning-color);">{{ feedbackCount }}</p>
-              <p>等待管理员处理</p>
+              <p>点击查看详情</p>
             </div>
           </div>
 
@@ -97,32 +97,53 @@ onMounted(() => {
 const loadStatistics = async () => {
   loading.value = true
   try {
-    // 获取用户统计
+    console.log('[DEBUG] 开始加载统计数据...')
+    
+    // 获取用户统计（使用专门的统计接口）
+    console.log('[DEBUG] 正在调用 getUserCounts...')
+    const userCountsResponse = await adminAPI.getUserCounts()
+    console.log('[DEBUG] getUserCounts 响应:', JSON.stringify(userCountsResponse))
+    if (userCountsResponse.code === 200 && userCountsResponse.data) {
+      const counts = userCountsResponse.data
+      totalUsers.value = counts.totalCount || 0
+      studentCount.value = counts.studentCount || 0
+      teacherCount.value = counts.teacherCount || 0
+    }
+
+    // 获取待审核用户数
+    console.log('[DEBUG] 正在调用 getUserList...')
     const userResponse = await adminAPI.getUserList({})
+    console.log('[DEBUG] getUserList 响应:', JSON.stringify(userResponse))
     if (userResponse.code === 200 && userResponse.data) {
-      const users = userResponse.data.list || []
-      studentCount.value = users.filter(u => u.identity === 'student').length
-      teacherCount.value = users.filter(u => u.identity === 'teacher').length
-      totalUsers.value = users.length
+      const users = userResponse.data.list || userResponse.data || []
       pendingUsers.value = users.filter(u => u.status === 'pending').length
     }
 
-    // 获取班级统计
-    const classResponse = await adminAPI.getClassCounts()
+    // 获取班级统计（使用教学班级列表接口）
+    console.log('[DEBUG] 正在调用 getTeachingClasses...')
+    const classResponse = await adminAPI.getTeachingClasses()
+    console.log('[DEBUG] getTeachingClasses 响应:', JSON.stringify(classResponse))
     if (classResponse.code === 200 && classResponse.data) {
-      if (Array.isArray(classResponse.data)) {
-        classCount.value = classResponse.data.length
-        totalStudentsInClasses.value = classResponse.data.reduce((sum, cls) => sum + (cls.studentCount || 0), 0)
+      // 兼容两种响应格式：直接数组或嵌套在 teachingClasses 中
+      const classes = classResponse.data.teachingClasses || classResponse.data
+      if (Array.isArray(classes)) {
+        classCount.value = classes.length
+        totalStudentsInClasses.value = classes.reduce((sum, cls) => sum + (cls.studentCount || 0), 0)
       }
     }
 
     // 获取反馈统计
+    console.log('[DEBUG] 正在调用 getFeedbacks...')
     const feedbackResponse = await adminAPI.getFeedbacks()
+    console.log('[DEBUG] getFeedbacks 响应:', JSON.stringify(feedbackResponse))
     if (feedbackResponse.code === 200 && feedbackResponse.data) {
       feedbackCount.value = feedbackResponse.data.length || 0
     }
+
+    console.log('[DEBUG] 统计数据加载完成')
   } catch (error) {
     console.error('加载统计数据失败:', error)
+    console.error('错误详情:', error.message, error.stack)
     // 使用默认值
     totalUsers.value = 0
     studentCount.value = 0
@@ -158,6 +179,10 @@ const accountBinding = () => {
 const logout = () => {
   localStorage.removeItem('user')
   router.push('/login')
+}
+
+const goToFeedback = () => {
+  router.push('/admin/feedback')
 }
 </script>
 
@@ -239,6 +264,14 @@ const logout = () => {
 .stat-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.stat-card.clickable {
+  cursor: pointer;
+}
+
+.stat-card.clickable:hover {
+  border: 2px solid var(--warning-color);
 }
 
 .stat-card h3 {

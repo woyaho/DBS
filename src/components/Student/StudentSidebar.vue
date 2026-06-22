@@ -5,10 +5,12 @@
     </div>
     <ul class="sidebar-menu">
       <li :class="{ active: currentPath === '/student/dashboard' }" @click="navigateTo('/student/dashboard')"> 首页</li>
-      <li :class="{ active: currentPath === '/student/homework' }" @click="navigateTo('/student/homework')"> 作业提交</li>
+      <li :class="{ active: currentPath.startsWith('/student/homework') || currentPath.startsWith('/student/submit') }" @click="navigateTo('/student/homework')"> 作业提交</li>
       <li :class="{ active: currentPath === '/student/grades' }" @click="navigateTo('/student/grades')"> 成绩查询</li>
+      <li :class="{ active: currentPath.startsWith('/student/smart-paper') }" @click="navigateTo('/student/smart-paper/list')"> 智能组卷</li>
       <li :class="{ active: currentPath === '/student/learning-aid' }" @click="navigateTo('/student/learning-aid')"> 学习辅助</li>
-      <li :class="{ active: currentPath === '/student/forum' }" @click="navigateTo('/student/forum')"> 学习论坛</li>
+      <li :class="{ active: currentPath.startsWith('/student/forum') }" @click="navigateTo('/student/forum')"> 学习论坛</li>
+      <li :class="{ active: currentPath === '/student/favorites' }" @click="navigateTo('/student/favorites')"> 我的收藏</li>
       <li :class="{ active: currentPath === '/student/settings' }" @click="navigateTo('/student/settings')"> 设置</li>
     </ul>
   </aside>

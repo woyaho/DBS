@@ -2,7 +2,7 @@
   <div class="page-layout">
     <!-- 栏头 -->
     <TeacherHeader />
-    
+
     <div class="content-container">
       <!-- 侧边栏 -->
       <TeacherSidebar />
@@ -69,9 +69,12 @@
                 </div>
                 <div class="homework-action">
                   <button class="btn btn-primary">批改作业</button>
+                  <button class="btn btn-secondary" @click.stop="uploadAnswer(homework.assignmentId)">上传参考答案</button>
+                  <button class="btn btn-outline" @click.stop="viewReferenceAnswer(homework.assignmentId)">查看参考答案</button>
+                  <button class="btn btn-outline" @click.stop="downloadReferenceAnswer(homework.assignmentId)">下载参考答案</button>
                 </div>
               </div>
-              
+
               <!-- 空状态 -->
               <div v-if="homeworkList.length === 0" class="empty-state">
                 <div class="empty-icon">📭</div>
@@ -86,6 +89,49 @@
   </div>
 </template>
 
+<script>
+import { teacherAPI } from '@/services/api.js'
+
+export default {
+  name: 'TeacherHomeworkList',
+  methods: {
+    async uploadAnswer(assignmentId) {
+      const input = document.createElement('input')
+      input.type = 'file'
+      input.accept = '.pdf'
+      input.style.display = 'none'
+
+      input.addEventListener('change', async (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+
+        if (!file.name.toLowerCase().endsWith('.pdf')) {
+          alert('请上传PDF格式的文件')
+          return
+        }
+
+        try {
+          const response = await teacherAPI.uploadAnswer(assignmentId, file)
+          if (response.code === 200) {
+            alert('参考答案上传成功')
+            this.$emit('refresh')
+          } else {
+            alert(response.message || '上传失败')
+          }
+        } catch (error) {
+          console.error('上传参考答案失败:', error)
+          alert('上传失败，请稍后重试')
+        }
+      })
+
+      document.body.appendChild(input)
+      input.click()
+      document.body.removeChild(input)
+    }
+  }
+}
+</script>
+
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
@@ -98,40 +144,83 @@ const router = useRouter()
 const homeworkList = ref([])
 const uncheckedHomeworks = ref([])
 const loading = ref(false)
+const lastLoadTime = ref(0) // 上次加载时间戳，用于简单缓存
 
-// 加载作业列表
-const loadHomeworkList = async () => {
+// 加载作业列表（带简单缓存，5分钟内不重复加载）
+const loadHomeworkList = async (forceRefresh = false) => {
+  // 检查缓存是否有效（5分钟内）
+  const now = Date.now()
+  if (!forceRefresh && now - lastLoadTime.value < 5 * 60 * 1000 && homeworkList.value.length > 0) {
+    console.log('使用缓存数据')
+    return
+  }
+
   loading.value = true
   try {
-    // 获取作业列表
-    const response = await teacherAPI.getAssignmentList()
-    if (response.code === 200) {
-      // 获取每个作业的状态
-      const homeworkWithStatus = await Promise.all(
-        response.data.map(async (item) => {
-          try {
-            const statusResponse = await teacherAPI.getAssignmentStatus(item.assignmentId)
-            const uncheckedResponse = await teacherAPI.getUncheckedHomeworks()
-            const uncheckedHomework = uncheckedResponse.data.find(hw => hw.assignmentId === item.assignmentId)
-            return {
-              ...item,
-              submittedCount: statusResponse.data.submittedCount,
-              totalCount: statusResponse.data.totalStudents,
-              ungradedCount: uncheckedHomework ? uncheckedHomework.ungradedCount : 0,
-              description: '点击查看详情'
-            }
-          } catch (error) {
-            return {
-              ...item,
-              submittedCount: 0,
-              totalCount: 0,
-              ungradedCount: 0,
-              description: '点击查看详情'
-            }
-          }
+    // 并行获取作业列表和待批改作业
+    const [listResponse, uncheckedResponse] = await Promise.all([
+      teacherAPI.getAssignmentList(),
+      teacherAPI.getUncheckedHomeworks()
+    ])
+
+    if (listResponse.code === 200) {
+      const uncheckedHomeworksMap = {}
+      if (uncheckedResponse.code === 200 && uncheckedResponse.data) {
+        uncheckedResponse.data.forEach(hw => {
+          uncheckedHomeworksMap[hw.assignmentId] = hw.ungradedCount
         })
+      }
+
+      // 检查后端是否已经返回状态信息（减少N+1查询）
+      const hasStatusInfo = listResponse.data.some(item =>
+        item.submittedCount !== null && item.submittedCount !== undefined &&
+        item.totalStudents !== null && item.totalStudents !== undefined
       )
-      homeworkList.value = homeworkWithStatus
+
+      if (hasStatusInfo) {
+        // 后端已返回状态信息，直接使用
+        homeworkList.value = listResponse.data.map(item => ({
+          ...item,
+          submittedCount: item.submittedCount || 0,
+          totalCount: item.totalStudents || 0,
+          ungradedCount: uncheckedHomeworksMap[item.assignmentId] || 0,
+          description: item.description || '点击查看详情'
+        }))
+      } else {
+        // 后端没有返回状态信息，需要逐个获取（这是后端API设计问题）
+        // 分批次获取，每个批次5个请求，避免过多并发
+        const batchSize = 5
+        const allHomework = []
+        const homeworkData = listResponse.data
+
+        for (let i = 0; i < homeworkData.length; i += batchSize) {
+          const batch = homeworkData.slice(i, i + batchSize)
+          const batchResults = await Promise.all(
+            batch.map(async (item) => {
+              try {
+                const statusResponse = await teacherAPI.getAssignmentStatus(item.assignmentId)
+                return {
+                  ...item,
+                  submittedCount: statusResponse.data?.submittedCount || 0,
+                  totalCount: statusResponse.data?.totalStudents || 0,
+                  ungradedCount: uncheckedHomeworksMap[item.assignmentId] || 0,
+                  description: '点击查看详情'
+                }
+              } catch (error) {
+                return {
+                  ...item,
+                  submittedCount: 0,
+                  totalCount: 0,
+                  ungradedCount: uncheckedHomeworksMap[item.assignmentId] || 0,
+                  description: '点击查看详情'
+                }
+              }
+            })
+          )
+          allHomework.push(...batchResults)
+        }
+        homeworkList.value = allHomework
+      }
     }
   } catch (error) {
     console.error('加载作业列表失败:', error)
@@ -139,6 +228,7 @@ const loadHomeworkList = async () => {
     homeworkList.value = []
   } finally {
     loading.value = false
+    lastLoadTime.value = Date.now() // 更新缓存时间戳
   }
 }
 
@@ -159,6 +249,26 @@ const loadUncheckedHomeworks = async () => {
 // 导航到批改页面
 const navigateToReview = (assignmentId) => {
   router.push(`/teacher/homework/review/${assignmentId}`)
+}
+
+// 查看参考答案
+const viewReferenceAnswer = async (assignmentId) => {
+  try {
+    await teacherAPI.viewAssignmentReferenceAnswer(assignmentId)
+  } catch (error) {
+    console.error('查看参考答案失败:', error)
+    alert('查看失败，请稍后重试')
+  }
+}
+
+// 下载参考答案
+const downloadReferenceAnswer = async (assignmentId) => {
+  try {
+    await teacherAPI.downloadAssignmentReferenceAnswer(assignmentId)
+  } catch (error) {
+    console.error('下载参考答案失败:', error)
+    alert('下载失败，请稍后重试')
+  }
 }
 
 // 格式化日期时间
@@ -429,6 +539,28 @@ onMounted(async () => {
 
 .btn-primary:hover {
   background: #357abd;
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+  margin-left: 8px;
+}
+
+.btn-secondary:hover {
+  background: #5a6268;
+}
+
+.btn-outline {
+  background: transparent;
+  color: #4a90e2;
+  border: 1px solid #4a90e2;
+  margin-left: 8px;
+}
+
+.btn-outline:hover {
+  background: #4a90e2;
+  color: white;
 }
 
 /* 空状态 */

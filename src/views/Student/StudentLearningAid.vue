@@ -2,7 +2,7 @@
   <div class="page-layout">
     <!-- 栏头 -->
     <StudentHeader />
-    
+
     <div class="content-container">
       <!-- 侧边栏 -->
       <StudentSidebar />
@@ -19,7 +19,7 @@
             <!-- 教师资料库 -->
             <div class="teacher-resources">
               <h2 class="section-title">教师资料库</h2>
-              <div class="resources-grid">
+              <div v-if="resources.length > 0" class="resources-grid">
                 <div v-for="(resource, index) in resources" :key="index" class="resource-card">
                   <div class="resource-icon">
                     <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
@@ -33,68 +33,13 @@
                   </button>
                 </div>
               </div>
-            </div>
-
-            <!-- 智能组卷 -->
-            <div class="smart-quiz">
-              <h2 class="section-title">智能组卷</h2>
-              <div class="quiz-config">
-                <!-- 章节选择 -->
-                <div class="config-section">
-                  <h3 class="config-title">章节选择</h3>
-                  <div class="chapter-selection">
-                    <div v-for="chapter in chapters" :key="chapter.id" class="chapter-item">
-                      <input type="checkbox" :id="`chapter-${chapter.id}`" v-model="selectedChapters" :value="chapter.id">
-                      <label :for="`chapter-${chapter.id}`">{{ chapter.name }}</label>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 难度和题量选择 -->
-                <div class="config-controls">
-                  <!-- 难度选择 -->
-                  <div class="control-item">
-                    <h3 class="control-title">难度选择</h3>
-                    <div class="slider-container">
-                      <input type="range" min="1" max="5" v-model="difficulty" class="difficulty-slider">
-                      <div class="slider-labels">
-                        <span class="label">极易</span>
-                        <span class="label">偏易</span>
-                        <span class="label active">正常</span>
-                        <span class="label">偏难</span>
-                        <span class="label">极难</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- 题量选择 -->
-                  <div class="control-item">
-                    <h3 class="control-title">题量选择</h3>
-                    <div class="slider-container">
-                      <input type="range" min="10" max="50" step="10" v-model="questionCount" class="question-slider">
-                      <div class="slider-labels">
-                        <span class="label">10题</span>
-                        <span class="label">20题</span>
-                        <span class="label active">30题</span>
-                        <span class="label">40题</span>
-                        <span class="label">50题</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- 个性化要求 -->
-                <div class="personalization">
-                  <h3 class="config-title">个性化要求</h3>
-                  <textarea v-model="personalRequirements" class="requirements-input" placeholder="输入要求"></textarea>
-                </div>
-
-                <!-- 生成试卷按钮 -->
-                <div class="generate-section">
-                  <button class="btn-generate" @click="generateQuiz">生成试卷并开始测试</button>
-                </div>
+              <div v-else class="empty-resources">
+                <div class="empty-icon">📚</div>
+                <p class="empty-text">暂无课件资源</p>
+                <p class="empty-hint">教师发布课件后将在此显示</p>
               </div>
             </div>
+
           </div>
         </main>
       </div>
@@ -103,69 +48,87 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted } from 'vue'
 import StudentSidebar from '@/components/Student/StudentSidebar.vue'
 import StudentHeader from '@/components/Student/StudentHeader.vue'
+import { studentAPI } from '@/services/api.js'
 
-const router = useRouter()
+// 资源数据（初始为空，将从API获取）
+const resources = ref([])
+const loadingResources = ref(false)
 
-// 模拟资源数据
-const resources = ref([
-  { id: 1, title: '课件一', type: 'PDF', size: '24KB', words: '0.2万' },
-  { id: 2, title: '课件二', type: 'PDF', size: '24KB', words: '0.2万' },
-  { id: 3, title: '课件三', type: 'PDF', size: '24KB', words: '0.2万' },
-  { id: 4, title: '课件四', type: 'PDF', size: '24KB', words: '0.2万' },
-  { id: 5, title: '课件五', type: 'PDF', size: '24KB', words: '0.2万' },
-  { id: 6, title: '课件六', type: 'PDF', size: '24KB', words: '0.2万' }
-])
 
-// 章节数据
-const chapters = ref([
-  { id: 1, name: '数据库系统概述' },
-  { id: 2, name: '数据模型与关系数据库' },
-  { id: 3, name: 'SQL语言' },
-  { id: 4, name: '数据库规范化' },
-  { id: 5, name: '事务与并发控制' },
-  { id: 6, name: '数据库安全与备份' },
-  { id: 7, name: '数据库设计' }
-])
 
-// 选择的章节
-const selectedChapters = ref([])
+// 加载课件列表
+const loadCoursewareList = async () => {
+  loadingResources.value = true
+  try {
+    const response = await studentAPI.getCoursewareList()
+    if (response.code === 200 && response.data) {
+      resources.value = response.data.map(item => ({
+        id: item.coursewareId,
+        title: item.title || item.fileName || '未命名课件',
+        type: item.contentType?.includes('pdf') ? 'PDF' : '其他',
+        size: formatFileSize(item.sizeBytes),
+        words: '0.2万'
+      }))
+    } else {
+      resources.value = []
+    }
+  } catch (error) {
+    console.error('加载课件列表失败:', error)
+    resources.value = []
+  } finally {
+    loadingResources.value = false
+  }
+}
 
-// 难度级别 (1-5)
-const difficulty = ref(3)
-
-// 题量
-const questionCount = ref(30)
-
-// 个性化要求
-const personalRequirements = ref('')
+// 格式化文件大小
+const formatFileSize = (bytes) => {
+  if (!bytes || bytes === 0) return '0B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + sizes[i]
+}
 
 // 下载资源
-const downloadResource = (resource) => {
+const downloadResource = async (resource) => {
   console.log('下载资源:', resource.title)
-  alert(`开始下载 ${resource.title}`)
+  try {
+    const blob = await studentAPI.downloadCourseware(resource.id)
+    if (blob) {
+      // 创建下载链接
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = resource.title
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      console.log('下载成功:', resource.title)
+    } else {
+      console.error('下载失败：返回数据为空')
+      alert('下载失败：服务器返回数据为空')
+    }
+  } catch (error) {
+    console.error('下载课件失败:', error)
+    // 根据错误类型给出更友好的提示
+    if (error.message.includes('404')) {
+      alert('下载失败：下载接口暂未开放，请稍后重试')
+    } else if (error.message.includes('500')) {
+      alert('下载失败：服务器内部错误，请联系管理员')
+    } else {
+      alert('下载失败：' + error.message)
+    }
+  }
 }
 
-// 生成试卷
-const generateQuiz = () => {
-  if (selectedChapters.value.length === 0) {
-    alert('请至少选择一个章节')
-    return
-  }
-  
-  const quizParams = {
-    chapters: selectedChapters.value,
-    difficulty: difficulty.value,
-    questionCount: questionCount.value,
-    requirements: personalRequirements.value
-  }
-  
-  console.log('生成试卷参数:', quizParams)
-  router.push('/student/quiz')
-}
+// 页面挂载时加载课件列表
+onMounted(() => {
+  loadCoursewareList()
+})
 </script>
 
 <style scoped>
@@ -299,171 +262,29 @@ const generateQuiz = () => {
   color: #4a90e2;
 }
 
-/* 智能组卷 */
-.smart-quiz {
-  background: white;
+/* 空状态 */
+.empty-resources {
+  background: #fafafa;
   border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  padding: 40px;
+  text-align: center;
 }
 
-.quiz-config {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
 }
 
-.config-section {
-  border-bottom: 1px solid #e9ecef;
-  padding-bottom: 20px;
-}
-
-.config-title {
+.empty-text {
   font-size: 16px;
-  font-weight: 600;
-  color: #1a2a3a;
-  margin: 0 0 16px 0;
-}
-
-.chapter-selection {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
-}
-
-.chapter-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.chapter-item input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  accent-color: #4a90e2;
-}
-
-.chapter-item label {
-  font-size: 14px;
-  color: #495057;
-  cursor: pointer;
-}
-
-.config-controls {
-  display: flex;
-  gap: 40px;
-  flex-wrap: wrap;
-}
-
-.control-item {
-  flex: 1;
-  min-width: 300px;
-}
-
-.control-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1a2a3a;
-  margin: 0 0 16px 0;
-}
-
-.slider-container {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-input[type="range"] {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: #e9ecef;
-  outline: none;
-  -webkit-appearance: none;
-}
-
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #4a90e2;
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(74, 144, 226, 0.3);
-}
-
-input[type="range"]::-moz-range-thumb {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #4a90e2;
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 2px 4px rgba(74, 144, 226, 0.3);
-}
-
-.slider-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
   color: #6c757d;
+  margin: 0 0 8px 0;
 }
 
-.slider-labels .label {
-  transition: all 0.3s;
-}
-
-.slider-labels .label.active {
-  color: #4a90e2;
-  font-weight: 600;
-}
-
-.personalization {
-  border-top: 1px solid #e9ecef;
-  padding-top: 20px;
-}
-
-.requirements-input {
-  width: 100%;
-  min-height: 100px;
-  padding: 12px;
-  border: 1px solid #dee2e6;
-  border-radius: 8px;
+.empty-hint {
   font-size: 14px;
-  font-family: inherit;
-  resize: vertical;
-}
-
-.requirements-input:focus {
-  outline: none;
-  border-color: #4a90e2;
-  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.2);
-}
-
-.generate-section {
-  display: flex;
-  justify-content: center;
-  margin-top: 20px;
-}
-
-.btn-generate {
-  padding: 12px 32px;
-  background: #8b4513;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: 0 4px 8px rgba(139, 69, 19, 0.3);
-}
-
-.btn-generate:hover {
-  background: #6b3410;
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(139, 69, 19, 0.4);
+  color: #adb5bd;
+  margin: 0;
 }
 
 /* 响应式 */
@@ -472,34 +293,17 @@ input[type="range"]::-moz-range-thumb {
     margin-left: 0;
     width: 100%;
   }
-  
+
   .main-content {
     padding: 16px;
   }
-  
+
   .page-title {
     font-size: 24px;
   }
-  
+
   .resources-grid {
     grid-template-columns: 1fr;
-  }
-  
-  .config-controls {
-    flex-direction: column;
-    gap: 24px;
-  }
-  
-  .control-item {
-    min-width: 100%;
-  }
-  
-  .chapter-selection {
-    grid-template-columns: 1fr;
-  }
-  
-  .smart-quiz {
-    padding: 16px;
   }
 }
 </style>

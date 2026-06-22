@@ -2,7 +2,7 @@
   <div class="page-layout">
     <!-- 栏头 -->
     <StudentHeader />
-    
+
     <div class="content-container">
       <!-- 侧边栏 -->
       <StudentSidebar />
@@ -81,6 +81,22 @@
                   </span>
                 </div>
               </div>
+
+              <!-- 已提交作业预览和下载 -->
+              <div v-if="homeworkStatus.submitted" class="submission-actions">
+                <h4>我提交的作业</h4>
+                <div class="submission-buttons">
+                  <button class="btn btn-secondary" @click="viewMySubmission">
+                    <span class="btn-icon">👁️</span>
+                    预览
+                  </button>
+                  <button class="btn btn-primary" @click="downloadMySubmission">
+                    <span class="btn-icon">📥</span>
+                    下载
+                  </button>
+                </div>
+              </div>
+
               <div v-if="homeworkStatus.published && homeworkStatus.finalScore !== null" class="report-actions">
                 <h4>成绩报告</h4>
                 <div class="report-buttons">
@@ -95,7 +111,7 @@
             <div v-if="!homeworkStatus?.submitted && !isExpired" class="submit-section">
               <h3>提交作业</h3>
               <div class="upload-section">
-                <div 
+                <div
                   class="upload-area"
                   @dragover.prevent @drop.prevent="handleDrop"
                   @click="triggerFileInput"
@@ -121,9 +137,9 @@
                 </div>
                 <div class="text-section">
                   <label class="text-label">作业说明（可选）</label>
-                  <textarea 
-                    v-model="submissionText" 
-                    class="text-input" 
+                  <textarea
+                    v-model="submissionText"
+                    class="text-input"
                     placeholder="请输入作业说明或备注..."
                     rows="4"
                   ></textarea>
@@ -190,54 +206,106 @@ const isExpired = computed(() => {
   return now > endDate
 })
 
-// 加载作业详情
-const loadHomeworkDetail = async () => {
-  if (!homeworkId.value) return
+// 加载作业数据（详情和状态并行获取）
+const loadHomeworkData = async () => {
+  console.log('=== loadHomeworkData 开始 ===')
+  console.log('=== homeworkId ===', homeworkId.value)
   
+  if (!homeworkId.value) {
+    console.error('=== homeworkId 为空 ===')
+    return
+  }
+
   loading.value = true
   try {
-    const response = await studentAPI.getAssignmentDetail(homeworkId.value)
-    if (response.code === 200) {
-      homeworkDetail.value = response.data
+    console.log('=== 并行执行两个API请求 ===')
+    // 并行执行两个API请求
+    const [detailResponse, statusResponse] = await Promise.all([
+      studentAPI.getAssignmentDetail(homeworkId.value),
+      studentAPI.getAssignmentStatus(homeworkId.value)
+    ])
+
+    console.log('=== detailResponse ===', detailResponse)
+    console.log('=== statusResponse ===', statusResponse)
+
+    // 处理作业详情
+    if (detailResponse.code === 200) {
+      homeworkDetail.value = detailResponse.data
+      console.log('=== 作业详情赋值成功 ===', homeworkDetail.value)
+    } else {
+      console.error('=== 作业详情请求失败 ===', detailResponse.message)
+    }
+
+    // 处理作业状态
+    if (statusResponse.code === 200) {
+      homeworkStatus.value = statusResponse.data
+      console.log('=== 作业状态赋值成功 ===', homeworkStatus.value)
+    } else {
+      console.error('=== 作业状态请求失败 ===', statusResponse.message)
     }
   } catch (error) {
-    console.error('加载作业详情失败:', error)
-    alert('加载作业详情失败，请稍后重试')
+    console.error('加载作业数据失败:', error)
+    console.error('错误堆栈:', error.stack)
+    alert('加载作业数据失败，请稍后重试')
   } finally {
     loading.value = false
-  }
-}
-
-// 加载作业状态
-const loadHomeworkStatus = async () => {
-  if (!homeworkId.value) return
-  
-  try {
-    const response = await studentAPI.getAssignmentStatus(homeworkId.value)
-    if (response.code === 200) {
-      homeworkStatus.value = response.data
-    }
-  } catch (error) {
-    console.error('加载作业状态失败:', error)
+    console.log('=== loadHomeworkData 结束 ===')
   }
 }
 
 // 预览附件
 const viewAttachment = async (fileId) => {
+  console.log('=== viewAttachment 开始 ===', fileId)
   try {
-    await studentAPI.viewAssignmentFile(fileId)
+    const blob = await studentAPI.viewAssignmentFile(fileId)
+    console.log('=== 预览附件响应 ===', blob)
+    
+    if (blob) {
+      // 创建临时URL并在新窗口打开预览
+      const url = window.URL.createObjectURL(blob)
+      window.open(url, '_blank')
+      console.log('=== 预览附件成功 ===')
+    } else {
+      console.error('=== 预览附件失败：返回数据为空 ===')
+      alert('预览附件失败：返回数据为空')
+    }
   } catch (error) {
     console.error('预览附件失败:', error)
+    console.error('错误堆栈:', error.stack)
     alert('预览附件失败，请稍后重试')
   }
 }
 
 // 下载附件
 const downloadAttachment = async (fileId) => {
+  console.log('=== downloadAttachment 开始 ===', fileId)
   try {
-    await studentAPI.downloadAssignmentFile(fileId)
+    const blob = await studentAPI.downloadAssignmentFile(fileId)
+    console.log('=== 下载附件响应 ===', blob)
+    
+    if (blob) {
+      // 获取附件信息用于文件名
+      const attachment = homeworkDetail.value?.attachments?.find(att => att.fileId === fileId)
+      const fileName = attachment?.fileName || `attachment_${fileId}.pdf`
+      
+      // 创建下载链接
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = fileName
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      
+      console.log('=== 下载附件成功 ===', fileName)
+    } else {
+      console.error('=== 下载附件失败：返回数据为空 ===')
+      alert('下载附件失败：返回数据为空')
+    }
   } catch (error) {
     console.error('下载附件失败:', error)
+    console.error('错误堆栈:', error.stack)
     alert('下载附件失败，请稍后重试')
   }
 }
@@ -261,6 +329,28 @@ const downloadReport = async (kind) => {
   } catch (error) {
     console.error('下载报告失败:', error)
     alert('下载报告失败，请稍后重试')
+  }
+}
+
+// 预览自己提交的作业
+const viewMySubmission = async () => {
+  if (!homeworkId.value) return
+  try {
+    await studentAPI.viewMySubmission(homeworkId.value)
+  } catch (error) {
+    console.error('预览提交的作业失败:', error)
+    alert('预览提交的作业失败，请稍后重试')
+  }
+}
+
+// 下载自己提交的作业
+const downloadMySubmission = async () => {
+  if (!homeworkId.value) return
+  try {
+    await studentAPI.downloadMySubmission(homeworkId.value)
+  } catch (error) {
+    console.error('下载提交的作业失败:', error)
+    alert('下载提交的作业失败，请稍后重试')
   }
 }
 
@@ -411,8 +501,7 @@ const getScoreClass = (score) => {
 
 // 页面加载时获取数据
 onMounted(async () => {
-  await loadHomeworkDetail()
-  await loadHomeworkStatus()
+  await loadHomeworkData()
 })
 </script>
 
@@ -685,6 +774,89 @@ onMounted(async () => {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+/* 我提交的作业区域 */
+.submission-actions {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px dashed #d0d0d0;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  padding: 16px;
+  border-radius: 12px;
+}
+
+.submission-actions h4 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.submission-actions h4::before {
+  content: '';
+  width: 4px;
+  height: 16px;
+  background: linear-gradient(180deg, #3b82f6 0%, #1d4ed8 100%);
+  border-radius: 2px;
+}
+
+.submission-buttons {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.submission-buttons .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  border: none;
+  outline: none;
+}
+
+.submission-buttons .btn-secondary {
+  background: #ffffff;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.submission-buttons .btn-secondary:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.submission-buttons .btn-primary {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+}
+
+.submission-buttons .btn-primary:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.submission-buttons .btn:active {
+  transform: translateY(0);
+}
+
+/* 图标样式 */
+.btn-icon {
+  font-size: 15px;
 }
 
 /* 提交区域 */
